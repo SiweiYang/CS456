@@ -59,3 +59,7 @@ mergePackets packets = foldl (\bytes p -> append bytes (pack (payload p))) empty
 --  s <- staticSocket "localhost" "512"
 --  i <- sendRTP s p1 (addrAddress t)
 --  return i
+
+-- dat <- (Data.ByteString.readFile "RTPTypes.hs")
+-- let packets = createPackets dat
+-- mergePackets packets
