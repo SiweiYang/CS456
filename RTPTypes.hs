@@ -18,7 +18,7 @@ joinWords = foldl accum 0
     accum a o = (shiftL a 8) .|. (fromIntegral o)
 
 
-data PacketType = DAT | ACK | EOT deriving (Show)
+data PacketType = DAT | ACK | EOT deriving (Eq, Show)
 serializePacketType :: PacketType -> Word32
 serializePacketType DAT = 0
 serializePacketType ACK = 1

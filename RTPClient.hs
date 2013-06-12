@@ -1,6 +1,7 @@
 -- file: CS456/A1/RTPClient.hs
 module RTPClient where
 
+import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..))
 import RTPOperations (targetSocketInfo, staticSocket, dynamicSocket, sendRTP, recvRTP, createPackets)
 import Network.Socket (addrAddress)
 
@@ -24,6 +25,8 @@ main = do
 	 sock <- dynamicSocket hostname port
 
 	 sendPackets sock packets (addrAddress addr)
+         sendRTP sock (Packet EOT 0 12 []) (addrAddress addr)
+         return ()
        where
          --sendPackets :: Socket -> Packet -> SockAddr -> IO ()
          sendPackets sock (packet:packets) addr = do
