@@ -1,7 +1,7 @@
 -- file: CS456/A1/RTPClient.hs
 module RTPClient where
 
-import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..))
+import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..), RTPStack(RTPStack))
 import RTPOperations (targetSocketInfo, staticSocket, dynamicSocket, sendRTP, recvRTP, createPackets)
 import Network.Socket (addrAddress)
 
@@ -10,15 +10,19 @@ import Control.Monad (unless)
 import Data.ByteString (pack, unpack, readFile)
 
 import Prelude hiding (readFile)
+import Data.Time.Clock (UTCTime, getCurrentTime, diffUTCTime)
+
+data operationalRTPStack = operationalRTPStack {start :: UTCTime, packets :: [Packet], stack :: RTPStack}
 
 main :: IO ()
 main = do
-         timeout : filename : _ <- getArgs
+         timeoutvalue : filename : _ <- getArgs
 	 putStrLn filename
 	 content <- readFile filename
-	 let packets = createPackets content
+	 let packets = createPackets 0 content
 
-	 let hostname = "localhost"
+	 let timeout = read timeoutvalue
+         let hostname = "localhost"
 	 let port = "513"
 
 	 addr <- targetSocketInfo hostname port

@@ -1,9 +1,9 @@
 -- file: CS456/A1/RTPClient.hs
 module RTPServer where
 
-import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..))
+import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..), RTPStack(RTPStack))
 import RTPOperations (targetSocketInfo, staticSocket, dynamicSocket, sendRTP, recvRTP, createPackets)
-import Network.Socket (sClose, addrAddress, SockAddr(SockAddrInet))
+import Network.Socket (sClose, Socket, addrAddress, SockAddr(SockAddrInet, SockAddrInet6))
 
 import System.Environment (getArgs)
 import Control.Monad (unless)
@@ -21,13 +21,19 @@ main = do
 
 	 sock <- staticSocket hostname port
 
-	 receivePackets sock
+	 RTPStack ps sw ew <- receivePackets sock (RTPStack [] 0 0)
+         putStrLn (show ps)
          sClose sock
        where
-         --receivePackets :: Socket -> IO ()
-         receivePackets sock = do
-	                         (SockAddrInet port hostname, packet) <- recvRTP sock                                 
-                                 putStrLn (show hostname)
-                                 putStrLn (show port)
-                                 putStrLn (show packet)
-				 unless (pt packet == EOT) (receivePackets sock)
+         --receivePackets :: Socket -> RTPStack -> IO RTPStack
+         receivePackets sock (RTPStack ps sw ew)= do
+                                                    --(SockAddrInet port hostname, packet) <- recvRTP sock
+                                                    (a, packet) <- recvRTP sock
+                                                    putStrLn (show a)
+                                                    --putStrLn (show hostname)
+                                                    --putStrLn (show port)
+                                                    putStrLn (show packet)
+                                                    if pt packet == EOT
+                                                    then return (RTPStack ps sw ew)
+                                                    else receivePackets sock (RTPStack ((packet, 0):ps) sw ew)
+                                                    

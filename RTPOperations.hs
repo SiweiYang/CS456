@@ -1,11 +1,13 @@
 -- file: CS456/A1/RTPOperations.hs
 module RTPOperations where
 
+import Data.Word
 import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..), serializePacket, deserializePacket, renumberPacket)
 import Network.Socket (Socket, SockAddr, withSocketsDo, AddrInfo, getAddrInfo, addrAddress, SockAddr, HostName, addrFamily, SocketType(Datagram), defaultProtocol, socket, bindSocket)
 import Network.Socket.ByteString (sendTo, recvFrom)
 import Data.ByteString (ByteString, empty, pack, unpack, append)
 import Data.List (sortBy)
+import Control.Monad (unless)
 
 targetSocketInfo :: HostName -> String -> IO AddrInfo
 targetSocketInfo hostname port = withSocketsDo $ do
@@ -37,8 +39,8 @@ recvRTP sock = withSocketsDo $ do
 		   let bytes = unpack msg
 		   return (addr, (deserializePacket bytes))
 
-createPackets :: ByteString -> [Packet]
-createPackets msg = map (\piece -> Packet DAT 0 (fromIntegral (12 + (length piece))) piece) pieces
+createPackets :: Word32 -> ByteString -> [Packet]
+createPackets start msg = map (\(piece, id) -> Packet DAT id (fromIntegral (12 + (length piece))) piece) (zip pieces [start..])
                     where
 		      splitor :: [[a]] -> [a] -> [[a]]
 		      splitor groups [] = groups
@@ -53,6 +55,24 @@ mergePackets packets = foldl (\bytes p -> append bytes (pack (payload p))) empty
                        where
 		         orderedPackets = sortBy (\p1 p2 -> compare (sn p1) (sn p2)) packets
 
+sortPacketStore :: [(Packet, Word)] -> [(Packet, Word)]
+sortPacketStore ps = sortBy comparator ps
+                     where
+                       comparator (p1, t1) (p2, t2) = case (t1, t2) of
+                         (0, 0) -> compare 0 0
+                         (0, _) -> GT
+                         (_, 0) -> LT
+                         (_, _) -> compare t1 t2
+
+refreshPacketStore :: Socket -> [(Packet, Word)] -> Word -> SockAddr -> IO ()
+refreshPacketStore sock ps threshold addr = sender sock addr threshold (sortPacketStore ps)
+                                            where
+                                              sender :: Socket -> SockAddr -> Word -> [(Packet, Word)] -> IO ()
+                                              sender sock addr threshold [] = do
+                                                                                return ()
+                                              sender sock addr threshold ((packet, t):ps) = do
+                                                                                            unless (threshold > t) ((sendRTP sock packet addr) >>= (\i -> return ()))
+                                                                                            sender sock addr threshold ps
 --main = do
 --  let p1 = Packet ACK 0 0 []
 --  t <- targetSocket "localhost" "514"

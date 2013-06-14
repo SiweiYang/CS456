@@ -2,7 +2,9 @@
 module RTPTypes where
 
 import Data.Word
-import Data.Bits((.|.), shiftL, shiftR)
+import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime)
+import Data.Bits ((.|.), shiftL, shiftR)
+import Data.List (sortBy)
 
 splitWord :: Word32 -> [Word8]
 splitWord w = [ fromIntegral (shiftR w 24),
@@ -33,7 +35,9 @@ type SequenceNumber = Word32
 type PacketLength = Word32
 type PayLoad = [Word8]
 
-data Packet = Packet {pt :: PacketType, sn :: SequenceNumber, pl :: PacketLength, payload :: PayLoad} deriving (Show)
+data Packet = Packet {pt :: PacketType, sn :: SequenceNumber, pl :: PacketLength, payload :: PayLoad}
+instance Show Packet where
+                           show (Packet pt sn pl payload) = "Packet {pt = " ++ show pt ++ ", sn = " ++ show sn ++ ", pl = " ++ show pl ++ ""
 serializePacket :: Packet -> [Word8]
 serializePacket (Packet pt sn pl payload) = (splitWord (serializePacketType pt)) ++
                                    (splitWord sn) ++
@@ -53,6 +57,8 @@ deserializePacket bytes = Packet pt sn pl payload
 
 renumberPacket :: SequenceNumber -> Packet -> Packet
 renumberPacket number (Packet pt sn pl payload) = (Packet pt number pl payload)
+
+data RTPStack = RTPStack {ps :: [(Packet, Word)], sw, ew :: Word}
 
 p1 = Packet ACK 0 0 []
 p2 = Packet ACK 1 0 []
