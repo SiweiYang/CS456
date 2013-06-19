@@ -2,7 +2,7 @@
 module RTPOperations where
 
 import Data.Word
-import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..), serializePacket, deserializePacket, renumberPacket)
+import RTPTypes (PacketType(..), SequenceNumber, PacketLength, PayLoad, Packet(..), serializePacket, deserializePacket, renumberPacket, sortPacketStoreByTime)
 import Network.Socket (Socket, SockAddr, withSocketsDo, AddrInfo, getAddrInfo, addrAddress, SockAddr, HostName, addrFamily, SocketType(Datagram), defaultProtocol, socket, bindSocket)
 import Network.Socket.ByteString (sendTo, recvFrom)
 import Data.ByteString (ByteString, empty, pack, unpack, append)
@@ -55,19 +55,10 @@ mergePackets packets = foldl (\bytes p -> append bytes (pack (payload p))) empty
                        where
 		         orderedPackets = sortBy (\p1 p2 -> compare (sn p1) (sn p2)) packets
 
-sortPacketStore :: [(Packet, Word)] -> [(Packet, Word)]
-sortPacketStore ps = sortBy comparator ps
-                     where
-                       comparator (p1, t1) (p2, t2) = case (t1, t2) of
-                         (0, 0) -> compare 0 0
-                         (0, _) -> GT
-                         (_, 0) -> LT
-                         (_, _) -> compare t1 t2
-
-refreshPacketStore :: Socket -> [(Packet, Word)] -> Word -> SockAddr -> IO ()
-refreshPacketStore sock ps threshold addr = sender sock addr threshold (sortPacketStore ps)
+refreshPacketStore :: Socket -> [(Packet, Word32)] -> Word32 -> SockAddr -> IO ()
+refreshPacketStore sock ps threshold addr = sender sock addr threshold (sortPacketStoreByTime ps)
                                             where
-                                              sender :: Socket -> SockAddr -> Word -> [(Packet, Word)] -> IO ()
+                                              sender :: Socket -> SockAddr -> Word32 -> [(Packet, Word32)] -> IO ()
                                               sender sock addr threshold [] = do
                                                                                 return ()
                                               sender sock addr threshold ((packet, t):ps) = do
