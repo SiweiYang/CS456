@@ -128,6 +128,7 @@ onReceivingGBNACK (RTPStack ps sw ew) (Packet ACK sn pl payload) = if sn < sw ||
                                                   then Nothing
                                                   else Just ns
                                                   where
+                                                    -- comparison between sw and sn is implicitly done on the filtering
                                                     ns = RTPStack (modifyPacketStore (Packet ACK sn pl payload) ps) (sn+1) (sn+10)
 
 onReceivingSRDAT :: RTPStack -> Packet -> Maybe (RTPStack, Packet)
