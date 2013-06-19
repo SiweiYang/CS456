@@ -17,87 +17,98 @@ import Data.Time.Clock (UTCTime, getCurrentTime, diffUTCTime)
 
 data OperationalRTPStack = OperationalRTPStack {start :: UTCTime, packets :: [Packet], stack :: RTPStack}
 
-cps :: Socket -> SockAddr -> Word32 -> RTPStack -> UTCTime -> IO ()
+cps :: Socket -> SockAddr -> Word32 -> RTPStack -> UTCTime -> IO RTPStack
 cps sock addr ttw stack start = if (length freePackets) == 0
-                    then do
-                      ct <- getCurrentTime
-                      let d = floor (diffUTCTime ct start) * 1000
-                      let activePackets = allActiveDATPackets stack d
-                      if (length activePackets) == 0
-                      then do
-                        let t = timeoutPacketStore ps
-                        let timewait = (t - d) * 1000
-                        putStrLn $ "RECV TIMEOUT " ++ (show timewait)
-                        result <- timeout 1 (recvRTP sock)
-                        putStrLn $ "RECV TERMINATE"
-                        if isNothing result
-                        -- Initiate another loop when nothing is received
-                        then cps sock addr ttw stack start
-                        else do
-                          let Just (_, packet) = result
-                          if (pt packet) == EOT
-                          then if isNothing (onReceivingEOT stack packet)
-                               -- Report out of order EOT
-                               then error "Problem detected on the received EOT"
-                               else do
-                                 putStrLn $ "PKT RECV " ++ (show packet)
-                                 -- Terminate after receiving legite EOT
-                                 return ()
-                          else if (pt packet) == DAT
-                               -- Report illegal DAT
-                               then error "Not supposed to receive DAT"
-                               else do
-                                 let ps' = modifyPacketStore packet ps
-                                 putStrLn $ "PKT RECV " ++ (show packet)
-                                 -- Initiate another loop after a legite ACK received
-                                 cps sock addr ttw (RTPStack ps' sw ew) start
-                      else do
-                        let packet = (head activePackets)
-                        sendRTP sock packet addr
-                        ct <- getCurrentTime
-                        let d = floor (diffUTCTime ct start) * 1000
-                        let ps' = updatePacketStore (packet, d+ttw) ps
-                        putStrLn $ "PKT SEND " ++ (show packet)
-                        putStrLn $ "PKT TIMEOUT " ++ (show (d+ttw))
-                        -- Initiate another loop after one active packet is sent
-                        cps sock addr ttw (RTPStack ps' sw ew) start
-                    else do
-                      let packet = (head freePackets)
-                      sendRTP sock packet addr
-                      ct <- getCurrentTime                      
-                      let d = floor ((diffUTCTime ct start) * 1000)
-                      putStrLn $ "TIME DIFF " ++ (show d) ++ " [" ++ (show (diffUTCTime ct start)) ++ "] from the start"
-                      let ps' = updatePacketStore (packet, d+ttw) ps
-                      putStrLn (show (take 5 ps'))
-                      putStrLn $ "PKT SEND " ++ (show packet)
-                      putStrLn $ "PKT TIMEOUT " ++ (show (d+ttw))
-                      -- Initiate another loop after one free packet is sent
-                      cps sock addr ttw (RTPStack ps' sw ew) start
-                    where
-                      RTPStack ps sw ew = stack
-                      freePackets = allFreeDATPackets stack
+                                then do
+                                  ct <- getCurrentTime
+                                  let d = floor ((diffUTCTime ct start) * 1000)
+                                  let activePackets = allActiveDATPackets stack d
+                                  if (length activePackets) == 0
+                                  then do
+                                    let t = timeoutPacketStore ps
+                                    if t == 0
+                                    then do
+                                      let packet = Packet EOT (fromIntegral (length ps)) 12 []
+                                      let ps' = updatePacketStore (packet, d+ttw) ps
+                                      sendRTP sock packet addr
+                                      putStrLn $ "PKT SEND " ++ (show packet)
+                                      putStrLn $ "PKT TIMEOUT " ++ (show (d+ttw))
+                                      -- Initiate another loop after sending EOT
+                                      cps sock addr ttw (RTPStack ps' sw ew) start
+                                    else do
+                                      let timewait = t - d
+                                      putStrLn $ "RECV TIMEOUT " ++ (show t) ++ " - " ++ (show d) ++ " = " ++ (show timewait)
+                                      result <- timeout (fromIntegral timewait * 1000) (recvRTP sock)
+                                      putStrLn $ "RECV TERMINATE"
+                                      if isNothing result
+                                      -- Initiate another loop when nothing is received
+                                      then cps sock addr ttw stack start
+                                      else do
+                                        let Just (_, packet) = result
+                                        if (pt packet) == EOT
+                                        then if isNothing (onReceivingEOT stack packet)
+                                             -- Report out of order EOT
+                                             then error "Problem detected on the received EOT"
+                                             else do
+                                               let ps' = modifyPacketStore packet ps
+                                               putStrLn $ "PKT RECV " ++ (show packet)
+                                               -- Terminate after receiving legite EOT
+                                               return (RTPStack ps' sw ew)
+                                        else if (pt packet) == DAT
+                                             -- Report illegal DAT
+                                             then error "Not supposed to receive DAT"
+                                             else do
+                                               let ps' = modifyPacketStore packet ps
+                                               putStrLn $ "PKT RECV " ++ (show packet)
+                                               -- Initiate another loop after a legite ACK received
+                                               cps sock addr ttw (RTPStack ps' sw ew) start
+                                  else do
+                                    let packet = (head activePackets)
+                                    sendRTP sock packet addr
+                                    ct <- getCurrentTime
+                                    let d = floor ((diffUTCTime ct start) * 1000)
+                                    let ps' = updatePacketStore (packet, d+ttw) ps
+                                    putStrLn $ "PKT SEND " ++ (show packet)
+                                    putStrLn $ "PKT TIMEOUT " ++ (show (d+ttw))
+                                    -- Initiate another loop after one active packet is sent
+                                    cps sock addr ttw (RTPStack ps' sw ew) start
+                                else do
+                                  let packet = (head freePackets)
+                                  sendRTP sock packet addr
+                                  ct <- getCurrentTime                      
+                                  let d = floor ((diffUTCTime ct start) * 1000)
+                                  putStrLn $ "TIME DIFF " ++ (show d) ++ " [" ++ (show (diffUTCTime ct start)) ++ "] from the start"
+                                  let ps' = updatePacketStore (packet, d+ttw) ps
+                                  putStrLn (show (take 5 ps'))
+                                  putStrLn $ "PKT SEND " ++ (show packet)
+                                  putStrLn $ "PKT TIMEOUT " ++ (show (d+ttw))
+                                  -- Initiate another loop after one free packet is sent
+                                  cps sock addr ttw (RTPStack ps' sw ew) start
+                                where
+                                  RTPStack ps sw ew = stack
+                                  freePackets = allFreeDATPackets stack
 
 main :: IO ()
 main = do
          timeoutvalue : filename : _ <- getArgs
-	 putStrLn $ filename
-	 content <- readFile filename
-	 let packets = createPackets 0 content
+         putStrLn $ filename
+         content <- readFile filename
+         let packets = createPackets 0 content
          let ps = sortPacketStoreBySN (foldr modifyPacketStore [] packets)
 
-	 let ttw = read timeoutvalue :: Word32
+         let ttw = read timeoutvalue :: Word32
          let hostname = "localhost"
-	 let port = "513"
+         let port = "1513"
 
-	 addr <- targetSocketInfo hostname port
-	 sock <- dynamicSocket hostname port
-         setSocketOption sock SO_RCVTIMEO 100
+         addr <- targetSocketInfo hostname port
+         sock <- dynamicSocket hostname port
 
-	 --sendPackets sock packets (addrAddress addr)
+         --sendPackets sock packets (addrAddress addr)
          start <- getCurrentTime
-         cps sock (addrAddress addr) ttw (RTPStack ps 0 9) start
+         RTPStack ps sw ew <- cps sock (addrAddress addr) ttw (RTPStack ps 0 (fromIntegral (length ps))) start
+         putStrLn (show ps)
        where
          --sendPackets :: Socket -> Packet -> SockAddr -> IO ()
          sendPackets sock (packet:packets) addr = do
-	                                          sendRTP sock packet addr
-						  unless (length packets == 0) (sendPackets sock packets addr)
+                                                    sendRTP sock packet addr
+                                                    unless (length packets == 0) (sendPackets sock packets addr)

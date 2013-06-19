@@ -37,24 +37,24 @@ type PayLoad = [Word8]
 
 data Packet = Packet {pt :: PacketType, sn :: SequenceNumber, pl :: PacketLength, payload :: PayLoad}
 instance Show Packet where
-                           --show (Packet pt sn pl payload) = "Packet {pt = " ++ show pt ++ ", sn = " ++ show sn ++ ", pl = " ++ show pl ++ ""
-                           show (Packet pt sn pl payload) = show pt ++ " " ++ show sn ++ " " ++ show pl
+                       --show (Packet pt sn pl payload) = "Packet {pt = " ++ show pt ++ ", sn = " ++ show sn ++ ", pl = " ++ show pl ++ ""
+                       show (Packet pt sn pl payload) = show pt ++ " " ++ show sn ++ " " ++ show pl
 serializePacket :: Packet -> [Word8]
 serializePacket (Packet pt sn pl payload) = (splitWord (serializePacketType pt)) ++
-                                   (splitWord sn) ++
-				   (splitWord pl) ++
-				   payload
+                                            (splitWord sn) ++
+                                            (splitWord pl) ++
+                                            payload
 
 deserializePacket :: [Word8] -> Packet
 deserializePacket bytes = Packet pt sn pl payload
                           where
-			    ptw = take 4 bytes
-			    snw = drop 4 (take 8 bytes)
-			    plw = drop 8 (take 12 bytes)
-			    payload = drop 12 bytes
-			    pt = deserializePacketType (joinWords ptw)
-			    sn = joinWords snw
-			    pl = joinWords plw
+                            ptw = take 4 bytes
+                            snw = drop 4 (take 8 bytes)
+                            plw = drop 8 (take 12 bytes)
+                            payload = drop 12 bytes
+                            pt = deserializePacketType (joinWords ptw)
+                            sn = joinWords snw
+                            pl = joinWords plw
 
 renumberPacket :: SequenceNumber -> Packet -> Packet
 renumberPacket number (Packet pt sn pl payload) = (Packet pt number pl payload)
@@ -63,7 +63,12 @@ data RTPStack = RTPStack {ps :: [(Packet, Word32)], sw, ew :: Word32} deriving (
 sortPacketStoreByTime :: [(Packet, Word32)] -> [(Packet, Word32)]
 sortPacketStoreByTime ps = sortBy comparator ps
                            where
-                             comparator (p1, t1) (p2, t2) = if (pt p1) == (pt p2) then timeComparator (p1, t1) (p2, t2) else compare (pt p1) (pt p2)
+                             typeComparator t1 t2 = case (t1, t2) of
+                                                      (ACK, ACK) -> EQ
+                                                      (ACK, _)   -> GT
+                                                      (_, ACK)   -> LT
+                                                      (_, _)     -> EQ
+                             comparator (p1, t1) (p2, t2) = if (typeComparator (pt p1) (pt p2)) == EQ then timeComparator (p1, t1) (p2, t2) else typeComparator (pt p1) (pt p2)
                              timeComparator (p1, t1) (p2, t2) = case (t1, t2) of
                                (0, 0) -> compare (sn p1) (sn p2)
                                (0, _) -> GT
@@ -82,7 +87,7 @@ checkPacketStore ((p, _):ps) num = if (sn p) == num
                                  else checkPacketStore ps num
 
 timeoutPacketStore :: [(Packet, Word32)] -> Word32
-timeoutPacketStore ps = if (pt packet) == DAT && timeout > 0
+timeoutPacketStore ps = if ((pt packet) == DAT) || ((pt packet) == EOT) && timeout > 0
                         then timeout
                         else 0
                         where

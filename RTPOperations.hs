@@ -11,49 +11,49 @@ import Control.Monad (unless)
 
 targetSocketInfo :: HostName -> String -> IO AddrInfo
 targetSocketInfo hostname port = withSocketsDo $ do
-                               addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
-			       --return (addrAddress (head addrinfos))
-			       return (head addrinfos)
+                                   addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
+                                   --return (addrAddress (head addrinfos))
+                                   return (head addrinfos)
 
 staticSocket :: HostName -> String -> IO Socket
 staticSocket hostname port = withSocketsDo $ do
-                             addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
-			     let serveraddr = head addrinfos :: AddrInfo
-			     sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
-			     bindSocket sock (addrAddress serveraddr)
-			     return sock
+                               addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
+                               let serveraddr = head addrinfos :: AddrInfo
+                               sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
+                               bindSocket sock (addrAddress serveraddr)
+                               return sock
 
 dynamicSocket :: HostName -> String -> IO Socket
 dynamicSocket hostname port = withSocketsDo $ do
-                             addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
-			     let serveraddr = head addrinfos :: AddrInfo
-			     sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
-			     return sock
+                                addrinfos <- getAddrInfo Nothing (Just hostname) (Just port)
+                                let serveraddr = head addrinfos :: AddrInfo
+                                sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
+                                return sock
 
 sendRTP :: Socket -> Packet -> SockAddr -> IO Int
 sendRTP sock packet addr = sendTo sock (pack (serializePacket packet)) addr
 
 recvRTP :: Socket -> IO (SockAddr, Packet)
 recvRTP sock = withSocketsDo $ do
-                   (msg, addr) <- recvFrom sock 512
-		   let bytes = unpack msg
-		   return (addr, (deserializePacket bytes))
+                 (msg, addr) <- recvFrom sock 512
+                 let bytes = unpack msg
+                 return (addr, (deserializePacket bytes))
 
 createPackets :: Word32 -> ByteString -> [Packet]
 createPackets start msg = map (\(piece, id) -> Packet DAT id (fromIntegral (12 + (length piece))) piece) (zip pieces [start..])
-                    where
-		      splitor :: [[a]] -> [a] -> [[a]]
-		      splitor groups [] = groups
-		      splitor groups elements = group : (splitor [] next)
-		                               where
-					         group = take 500 elements
-						 next = drop 500 elements
-		      pieces = splitor [] (unpack msg)
+                          where
+                            splitor :: [[a]] -> [a] -> [[a]]
+                            splitor groups [] = groups
+                            splitor groups elements = group : (splitor [] next)
+                                                      where
+                                                        group = take 500 elements
+                                                        next = drop 500 elements
+                            pieces = splitor [] (unpack msg)
 
 mergePackets :: [Packet] -> ByteString
 mergePackets packets = foldl (\bytes p -> append bytes (pack (payload p))) empty orderedPackets
                        where
-		         orderedPackets = sortBy (\p1 p2 -> compare (sn p1) (sn p2)) packets
+                         orderedPackets = sortBy (\p1 p2 -> compare (sn p1) (sn p2)) packets
 
 refreshPacketStore :: Socket -> [(Packet, Word32)] -> Word32 -> SockAddr -> IO ()
 refreshPacketStore sock ps threshold addr = sender sock addr threshold (sortPacketStoreByTime ps)
@@ -62,8 +62,8 @@ refreshPacketStore sock ps threshold addr = sender sock addr threshold (sortPack
                                               sender sock addr threshold [] = do
                                                                                 return ()
                                               sender sock addr threshold ((packet, t):ps) = do
-                                                                                            unless (threshold > t) ((sendRTP sock packet addr) >>= (\i -> return ()))
-                                                                                            sender sock addr threshold ps
+                                                                                              unless (threshold > t) ((sendRTP sock packet addr) >>= (\i -> return ()))
+                                                                                              sender sock addr threshold ps
 --main = do
 --  let p1 = Packet ACK 0 0 []
 --  t <- targetSocket "localhost" "514"
