@@ -1,2 +1,14 @@
 *\~
 *\.hs~
+
+A1STDC/client
+A1STDC/server
+A1STDC/recvInfo
+A1STDC/channelInfo
+
+A1STDC/gbnReceiver
+A1STDC/gbnSender
+A1STDC/srReceiver
+A1STDC/srSender
+
+A1STDC/file

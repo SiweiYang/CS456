@@ -4,7 +4,7 @@
 #ifndef PACKET_UTIL
 #define PACKET_UTIL
 
-#define WINDOW_SIZE       10
+
 struct Stack {
   unsigned int size;
   unsigned int window_low;
@@ -15,10 +15,12 @@ struct Stack {
 typedef struct Stack Stack;
 
 Stack createStack (unsigned int size) {
+  printf("Creating Stack of size %d\n", size);
   // calloc auto-set 0
-  void * p_ptr = calloc(size, sizeof(Packet));
+  // extra one space for EOT
+  void * p_ptr = calloc(size+1, sizeof(Packet));
   //bzero(p_ptr, size * sizeof(Packet));
-  void * t_ptr = calloc(size, sizeof(unsigned int));
+  void * t_ptr = calloc(size+1, sizeof(unsigned int));
   //bzero(t_ptr, size * sizeof(unsigned int));
   Stack s;
   s.size = size;
@@ -30,6 +32,17 @@ Stack createStack (unsigned int size) {
   return s;
 }
 
+Stack expandStack (Stack stack, unsigned int margin) {
+  unsigned int size = stack.size + margin;
+  printf("Expanding Stack by size of %d\n", margin);
+  Stack s = createStack(size);
+  
+  memcpy(s.packets, stack.packets, stack.size * sizeof(Packet));
+  memcpy(s.timeouts, stack.timeouts, stack.size * sizeof(unsigned int));
+  
+  return s;
+}
+
 void destroyStack (Stack stack) {
   free(stack.packets);
   free(stack.timeouts);
@@ -37,7 +50,8 @@ void destroyStack (Stack stack) {
 
 // changes written to heap memory direcly
 Stack modPacket (Stack stack, Packet p, unsigned int t) {
-  if (p.sn >= stack.size)failure("Packet don't fit into RTP Stack\n");
+  if (p.sn > stack.size)failure("Packet don't fit into RTP Stack\n");
+  if (t > 0)printf("MOD PKT %d to timeout at %d\n", p.sn, t);
   
   Packet * packet = stack.packets + p.sn;
   *packet = p;
@@ -48,11 +62,18 @@ Stack modPacket (Stack stack, Packet p, unsigned int t) {
 }
 Stack addPacket (Stack stack, Packet p) {return modPacket(stack, p, 0);}
 
-Stack updateStackWindow(Stack stack) {
+unsigned int checkStackWindow(Stack stack) {
   unsigned int adv = 0;
   while (stack.window_low + adv < stack.size) {
-    if ((stack.packets + stack.window_low + adv)->pt == ACK)adv++;
+    if ((stack.packets + stack.window_low + adv)->pt != ACK)break;
+    adv++;
   }
+  
+  return stack.window_low + adv;
+}
+
+Stack passiveUpdateStackWindow(Stack stack) {
+  unsigned int adv = checkStackWindow(stack) - stack.window_low;
   
   stack.window_low += adv;
   stack.window_high += adv;
@@ -61,43 +82,50 @@ Stack updateStackWindow(Stack stack) {
 }
 
 unsigned int timeoutStackWindow(Stack stack) {
+  //printf("Find Free Packet between %d and %d\n", stack.window_low, stack.window_high);
   unsigned int timeout = UINT_MAX;
   unsigned int cursor = stack.window_low;
-  while (cursor <= stack.window_high) {
+  while (cursor <= stack.window_high && cursor <= stack.size) {
     Packet * p_ptr = stack.packets+cursor;
     unsigned int t = *(stack.timeouts+cursor);
+    //printf("Packet %d timeout at %d\n", p_ptr->sn, t);
     if ((p_ptr->pt == DAT || p_ptr->pt == EOT) && t > 0 && t < timeout)timeout = t;
     cursor++;
   }
+  printf("Next timeout is %d\n", timeout);
   
   if (timeout == UINT_MAX)failure("Requesting next timeout without active transmission");
   return timeout;
 }
 
-void onReceive (Stack stack, Packet p) {
-  if (p.sn < stack.window_low || p.sn > stack.window_high)failure("Packet SN out of bound");
+Stack updateStackWindow (Stack stack, Packet p) {
+  if (p.sn < stack.window_low || p.sn > stack.window_high || p.sn > stack.size)failure("Packet SN out of bound");
   
   if (p.pt == DAT) {
-    stack = addPacket(stack, p);
-#ifdef GBN
-    stack.window_low = p.sn + 1;
-    stack.window_high = p.sn + WINDOW_SIZE;
+    // receiver can choose to not have a sending window
+    /*
+#ifdef GBN    
+    unsigned int adv = p.sn - stack.window_low + 1;
+    stack.window_low += adv;
+    stack.window_high += adv;
+    
 #endif
 
 #ifdef SR
     stack = updateStackWindow(stack);
 #endif
+    */
   }
   
   if (p.pt == ACK) {
-    stack = addPacket(stack, p);
 #ifdef GBN
-    stack.window_low = p.sn + 1;
-    stack.window_high = p.sn + WINDOW_SIZE;
+    unsigned int adv = p.sn - stack.window_low + 1;
+    stack.window_low += adv;
+    stack.window_high += adv;
 #endif
 
 #ifdef SR
-    stack = updateStackWindow(stack);
+    stack = passiveUpdateStackWindow(stack);
 #endif
   }
   
@@ -105,26 +133,41 @@ void onReceive (Stack stack, Packet p) {
 }
 
 Packet * findFreePacket (Stack stack) {
+  //printf("Find Free Packet between %d and %d\n", stack.window_low, stack.window_high);
+  
   unsigned int cursor = stack.window_low;
-  while (cursor <= stack.window_high) {
-    Packet * p_prt = stack.packets+cursor;
+  while (cursor <= stack.window_high && cursor <= stack.size) {
+    Packet * p_ptr = stack.packets+cursor;
     unsigned int t = *(stack.timeouts+cursor);
-    if (p_prt->pt == DAT && t == 0)return p_prt;
+    // only send fresh DAT packet
+    // skip over uninitialized packet though there shouldn't be any    
+    if (p_ptr->pt == DAT && p_ptr->pl > 0 && t == 0) {
+      //printf("Packet at %d with SN %d\n", cursor, p_ptr->sn);
+      return p_ptr;
+    }
     cursor++;
   }
   
+  //printf("No Free Packet\n");
   return NULL;
 }
 
 Packet * findActivePacket (Stack stack, unsigned int ct) {
+  //printf("Find Active Packet between %d and %d\n", stack.window_low, stack.window_high);
+
   unsigned int cursor = stack.window_low;
-  while (cursor <= stack.window_high) {
-    Packet * p_prt = stack.packets+cursor;
+  while (cursor <= stack.window_high && cursor <= stack.size) {
+    Packet * p_ptr = stack.packets+cursor;
     unsigned int t = *(stack.timeouts+cursor);
-    if (t <= ct)return p_prt;
+    // may need to resend EOT so can't filter with only DAT
+    if (t > 0 && t <= ct) {
+      //printf("Packet at %d with SN %d\n", cursor, p_ptr->sn);
+      return p_ptr;
+    }
     cursor++;
   }
   
+  //printf("No Active Packet\n");
   return NULL;
 }
 #endif
