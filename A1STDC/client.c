@@ -30,8 +30,10 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
   p_ptr = findFreePacket(stack);
   if (p_ptr != NULL) {
     printf("Sending free packet\n");
-    ppacket(*p_ptr, "SEND");
-    writeToBuffer(buffer, PACKET_SIZE_MAX, *p_ptr);
+    Packet p = *p_ptr;
+    ppacket(p, "SEND");
+    p.sn = p.sn % 32;
+    writeToBuffer(buffer, PACKET_SIZE_MAX, p);
     int n = sendto(sockfd, buffer, p_ptr->pl, 0, dest_addr, sizeof(*dest_addr));
     if (n < 0)exception("ERROR writing to socket");
     
@@ -42,8 +44,10 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
   p_ptr = findActivePacket(stack, ct);
   if (p_ptr != NULL) {
     printf("Sending active packet\n");
-    ppacket(*p_ptr, "SEND");
-    writeToBuffer(buffer, PACKET_SIZE_MAX, *p_ptr);
+    Packet p = *p_ptr;
+    ppacket(p, "SEND");
+    p.sn = p.sn % 32;
+    writeToBuffer(buffer, PACKET_SIZE_MAX, p);
     int n = sendto(sockfd, buffer, p_ptr->pl, 0, dest_addr, sizeof(*dest_addr));
     if (n < 0)exception("ERROR writing to socket");
     
@@ -75,6 +79,7 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
     
     Packet p = readFromBuffer(buffer, n);
     ppacket(p, "RECV");
+    while (p.sn < stack.window_low)p.sn += 32;
     if (p.pt == EOT) {
       p_ptr = stack.packets + p.sn;
       if (p_ptr->pt != EOT) {
@@ -108,11 +113,12 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
        p.pl = PACKET_SIZE_MIN;
        
        ppacket(p, "SEND");
+       stack = modPacket(stack, p, ct + timeout);
+       
+       p.sn = p.sn % 32;
        writeToBuffer(buffer, PACKET_SIZE_MAX, p);
        n = sendto(sockfd, buffer, p.pl, 0, dest_addr, sizeof(*dest_addr));
        if (n < 0)exception("ERROR writing to socket");
-       
-       stack = modPacket(stack, p, ct + timeout);
     }
   } else failure("TIMEOUT");
   
