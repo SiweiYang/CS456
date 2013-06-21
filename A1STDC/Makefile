@@ -1,6 +1,6 @@
 # --- macros
 CC=gcc
-CFLAGS= -g
+CFLAGS= -g -O2
 OBJECTS= gbnReceiver gbnSender srReceiver srSender
 
 # --- targets
@@ -21,4 +21,4 @@ srSender: types.c packet_util.c client.c
 
 # --- remove binary and executable files
 clean:
-	rm -f $(OBJECTS) recvInfo channelInfo
+	rm -f $(OBJECTS) file client server recvInfo channelInfo *~

@@ -1,5 +1,6 @@
 \documentclass[12pt]{article}
 \usepackage{fourier}
+\usepackage{hyperref}
 
 \begin{document}
 
@@ -28,7 +29,7 @@ struct Stack {
 typedef struct Stack Stack;
 \end{verbatim}
 \end{samepage}
-Thus, the program can sequantially process dispatching and transmission in different spaces.
+Thus, the program can sequantially process dispatching and transmission in different spaces in a \href{http://en.wikipedia.org/wiki/Continuation-passing_style}{Continuation Passing Style} style.
 
 \subsection{State Centric}
 To manage transmission effectively, a suit of the operations are created with a focus on the state of transmission. For instance:
@@ -93,7 +94,7 @@ The importance of self-managing data structure is often over looked. But here it
 
 \section{Testing and Quality Assurance}
 \subsection{Black Box Testing}
-The program has been tested with two black box testing techniques: random data attack and integration testing. The data attack concerns the robustness of the program: will the program crash on any possible input? Not only out of order packet but also random message that does not deserialize to packet are thrown at both the client and the server to test their robustness. And integration testing is simply transferring data files, big and small, with a check on file content after. Different timeout configurations are tested on each cases.
+The program has been tested with two black box testing techniques: random data attack and integration testing. The data attack concerns the robustness of the program: will the program crash on any possible input? Not only out of order packet but also random message that does not deserialize to packet are thrown at both the client and the server to test their robustness. And integration testing is simply transferring data files, big and small, with a check on file content after. Different timeout configurations are tested on each cases. \textbf{Note: during transmission of large file over really unreliable channel, the program do fail when the program stack grows out of bound(at depth 6000+). This is GCC's fault for not doing tail recursion properly. And accomodate to that violates the design of this program. Thus the author left this as an issue for now, and is trying to make the tail recursion happen.}
 
 \subsection{White Box Assurance}
 While black-box testing concerns program behavior on typical use case, to provide quality assurance, analysis of program correctness has to be done. To help with that, before anything else, the program is written with defensive programming in mind and trades performance with provability sometime:
