@@ -96,6 +96,7 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
     stack = updateStackWindow(stack, p);
     // dummy window size management for now
     if (stack.window_high > stack.size)stack.window_high = stack.size;
+    printf("Update Stack Window to %d and %d\n", stack.window_low, stack.window_high);
     
     // send EOT since all DAT transmissions are done
     if (stack.window_low == stack.size) {

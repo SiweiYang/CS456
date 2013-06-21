@@ -66,7 +66,7 @@ Stack iteration (int sockfd, char* buffer, Stack stack) {
   // don't need to do anything
 #endif
   ppacket(p, "SEND");
-  {
+  if (p.sn >= 0){
     writeToBuffer(buffer, PACKET_SIZE_MAX, p);
     int n = sendto(sockfd, buffer, p.pl, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     if (n < 0)exception("ERROR writing to socket");
