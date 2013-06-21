@@ -39,8 +39,8 @@ Stack expandStack (Stack stack, unsigned int margin) {
   s.window_low = stack.window_low;
   s.window_high = stack.window_high;
   
-  memcpy(s.packets, stack.packets, stack.size * sizeof(Packet));
-  memcpy(s.timeouts, stack.timeouts, stack.size * sizeof(unsigned int));
+  memcpy(s.packets, stack.packets, (stack.size+1) * sizeof(Packet));
+  memcpy(s.timeouts, stack.timeouts, (stack.size+1) * sizeof(unsigned int));
   
   return s;
 }

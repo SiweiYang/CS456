@@ -1,10 +1,10 @@
-#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <netdb.h>
 
@@ -17,11 +17,13 @@ void error(const char *msg)
     exit(0);
 }
 
-void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack stack, time_t start, unsigned int timeout) {
+void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack stack, struct timeval start, unsigned int timeout) {
   bzero(buffer, PACKET_SIZE_MAX);
-  time_t timer;
-  time(&timer);
-  unsigned int ct = (unsigned int)(difftime(timer, start) * 1000);
+  struct timeval timer;
+  struct timezone tz;
+  gettimeofday(&timer, &tz);
+  //printf("Current time is %lu %lu\n", (long)timer.tv_sec, (long)timer.tv_usec);
+  unsigned int ct = (unsigned int)((timer.tv_sec - start.tv_sec) * 1000 +  (timer.tv_usec - start.tv_usec) / 1000);
   //printf("Current time is %d\n", ct);
   
   Packet* p_ptr;
@@ -62,7 +64,7 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
   tv.tv_sec = 0;
   tv.tv_usec = 1000 * wait;
   
-  printf("WAIT %dms\n", wait);
+  printf("Current time is %d WAIT %dms\n", ct, wait);
   retval = select(sockfd+1, &rfds, NULL, NULL, &tv);
   
   if (retval == -1)exception("ERROR select()");
@@ -125,10 +127,10 @@ int main(int argc, char *argv[])
      exit(0);
   }
 #ifdef GBN
-    printf("Running Sender based on GBN semantics");
+    printf("Running Sender based on GBN semantics\n");
 #endif
 #ifdef SR
-    printf("Running Sender based on SR semantics");
+    printf("Running Sender based on SR semantics\n");
 #endif
 
   unsigned int timeout = atoi(argv[1]);
@@ -169,7 +171,7 @@ int main(int argc, char *argv[])
     unsigned int length = ftell(fp);
     fseek(fp,0L,SEEK_SET);
     
-    Stack stack = createStack((length + PACKET_DATA_SIZE_MAX - 1) / PACKET_DATA_SIZE_MAX);
+    stack = createStack((length + PACKET_DATA_SIZE_MAX - 1) / PACKET_DATA_SIZE_MAX);
     Packet p;
     unsigned int pos = ftell(fp);
     unsigned int sn = 0;
@@ -191,8 +193,9 @@ int main(int argc, char *argv[])
   
   // start communication
   char buffer[PACKET_SIZE_MAX+1];
-  time_t start;
-  time(&start);
+  struct timeval start;
+  struct timezone tz;
+  gettimeofday(&start, &tz);
   iteration(sockfd, (struct sockaddr *)&serv_addr, buffer, stack, start, timeout);
   
   // clear footprint, and exit

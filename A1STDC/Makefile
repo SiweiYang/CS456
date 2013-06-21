@@ -10,10 +10,10 @@ gbnReceiver: types.c packet_util.c server.c
 	$(CC) $(CFLAGS) -DGBN server.c -o $@
 
 gbnSender: types.c packet_util.c client.c
-	$(CC) $(CFLAGS) -DSR client.c -o $@
+	$(CC) $(CFLAGS) -DGBN client.c -o $@
 
 srReceiver: types.c packet_util.c server.c
-	$(CC) $(CFLAGS) -DGBN server.c -o $@
+	$(CC) $(CFLAGS) -DSR server.c -o $@
 
 srSender: types.c packet_util.c client.c
 	$(CC) $(CFLAGS) -DSR client.c -o $@
