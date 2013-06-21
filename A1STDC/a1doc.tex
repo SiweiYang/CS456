@@ -14,329 +14,108 @@ The goal of this assigment is to implement programs that can reliably transfer d
 The programs delivered are configured to transfer a file from client side to server side over a provided, most likely unreliable, channel to demonstrate the correctness of the protocol, and performance evaluation. But the instruments and modules developed for the programs can be packaged with other programs for rapid adoption of the reliable transfer protocol.
 
 \section{Design Philosophy}
-layered design
-complexity lies in
+\subsection{Layered Design}
+The complexity of this program lies in the mixture of dispatch/processing logic and transmission facility. So the strategy of layered design is applied where the transmission is taken care by a data structure:
+\begin{samepage}
+\begin{verbatim}
+struct Stack {
+  unsigned int size;
+  unsigned int window_low;
+  unsigned int window_high;
+  Packet * packets;
+  unsigned int * timeouts;
+};
+typedef struct Stack Stack;
+\end{verbatim}
+\end{samepage}
+Thus, the program can sequantially process dispatching and transmission in different spaces.
 
-state centric
-after separating the transmission layer and dispatching layer, we 
+\subsection{State Centric}
+To manage transmission effectively, a suit of the operations are created with a focus on the state of transmission. For instance:
+\begin{samepage}
+\begin{verbatim}
+Stack updateStackWindow (Stack stack, Packet p) {
+  if (p.sn < stack.window_low || p.sn > stack.window_high || p.sn > stack.size)failure("Packet SN out of bound");
+  
+  if (p.pt == DAT) {
+    // receiver can choose to not have a sending window
+    /*
+#ifdef GBN    
+    unsigned int adv = p.sn - stack.window_low + 1;
+    stack.window_low += adv;
+    stack.window_high += adv;
+    
+#endif
 
-correctiveness over performance
-self managing data structure, explicit state passing
+#ifdef SR
+    stack = updateStackWindow(stack);
+#endif
+    */
+  }
+  
+  if (p.pt == ACK) {
+#ifdef GBN
+    unsigned int adv = p.sn - stack.window_low + 1;
+    stack.window_low += adv;
+    stack.window_high += adv;
+#endif
+
+#ifdef SR
+    stack = passiveUpdateStackWindow(stack);
+#endif
+  }
+  
+  return stack;
+}
+\end{verbatim}
+\end{samepage}
+The method operate the transmission stack on receiving a new packet as if it operates a state machine. Thus, cleanly encapsulate the inner working of the stack. Let the user interact with the stack only based on its state.
+
+\subsection{Self-managing Data Structure}
+Related to the state machine centric approach is the adoption of self-managing data structure. This is usually taken care of by container types in the standard library. However, C is no normal language in which the programmer has to spend effort creating self-managing data structure:
+\begin{samepage}
+\begin{verbatim}
+Stack expandStack (Stack stack, unsigned int margin) {
+  unsigned int size = stack.size + margin;
+  printf("Expanding Stack by size of %d\n", margin);
+  Stack s = createStack(size);
+  s.window_low = stack.window_low;
+  s.window_high = stack.window_high;
+  
+  memcpy(s.packets, stack.packets, stack.size * sizeof(Packet));
+  memcpy(s.timeouts, stack.timeouts, stack.size * sizeof(unsigned int));
+  
+  return s;
+}
+\end{verbatim}
+\end{samepage}
+The importance of self-managing data structure is often over looked. But here it is key to support potentially unlimited state created while receiving packets.
 
 \section{Testing and Quality Assurance}
-random data bombard/smoke test
-unit test
-reasonning
-integration test
+\subsection{Black Box Testing}
+The program has been tested with two black box testing techniques: random data attack and integration testing. The data attack concerns the robustness of the program: will the program crash on any possible input? Not only out of order packet but also random message that does not deserialize to packet are thrown at both the client and the server to test their robustness. And integration testing is simply transferring data files, big and small, with a check on file content after. Different timeout configurations are tested on each cases.
 
-
-
-
-
-
-
-
-
-is designed to be written in clojure, which
-is a recent lisp dialect that compiles to java byte code. For A1, the compiler
-used a tweaked combinatory parser implementation to complete both the scanning
-and parsing phase of the compiler in order to generate an AST, which is followed
-by a weeder to perform extra transformations and checking. Efforts were made to
-implement several extra parser combinators, and to achieve maximal munch. The
-end result was satisfactory in correctness, and effort put in implementation was
-minimum.
-
-In case anyone would want to read the code, the implementation of the parser is
-mostly in \texttt{joosc/src/joosc}. The reader should also notice the directory
-\texttt{joosc/src/clarsec} which holds the implementation of the tweaked
-opensource parser library.
-
-\section{Combinatory Parsing and AST Building}
-
-Instead of implementing a scanner followed by an LL/LR parser, which would be
-fast in performance but tedious to implement, we chose to use combinatory
-parsing to complete both the scanning and parsing phase of the compiler for its
-elegancy and simplicity.
-
-As an review of combinatory parsing, a combinatory parser is a top-down
-parser. The top level parser is composed through gluing basic parsers together
-to form a hierarchy of parsers, with the leave parsers consuming characters. The
-idea can be best illustrated through an example, such as our parser that parses
-a literal, defined in \texttt{parser.clj}.
-
-\begin{verbatim}
-(def literal (<|> $null $bool $int $string $char))
-\end{verbatim}
-
-This expression defines a literal parser that parses literals. \verb'<|>' is the
-"alternative" combinator, that consumes a list of parsers, and generates a
-parser that would try each of the listed parser on the input character stream in
-the order they are provided, until either one of the parsers succeed, in which
-case the AST of the succeeded parse is returned, or all parsers failed to parse
-the input string, in which a failure is returned. In this case, the literal
-parsers generated will parse null, boolean, integer, string, and character
-literals, where each of these literals were also defined as a combinatory
-parser. For example, the string literal parser is defined in \texttt{tokens.clj}
-as
-
-\begin{verbatim}
-(token $string (between "\"" "\"" unescape-str))
-\end{verbatim}
-
-\noindent where \texttt{between} is a combinator that consumes 3 parsers, and
-generates a parser that returns the AST of the third parser only if the prefix
-and postfix of the portion of parsed input can be parsed by the first and second
-parser. In this case \verb'"\""' is a parser that parses the double quotation
-mark, and \texttt{unescape-str} parses a java string literal, and returns the
-string with all characters unescaped.
-
-All other parsers for different grammars that composed joos were all defined in
-a similar manner. The resulting code is readable and easy to modify and
-check. For example, the \texttt{compilation-unit} parser, which is the top level
-parser, is defined in \texttt{parser.clj} as
-
+\subsection{White Box Assurance}
+While black-box testing concerns program behavior on typical use case, to provide quality assurance, analysis of program correctness has to be done. To help with that, before anything else, the program is written with defensive programming in mind and trades performance with provability sometime:
 \begin{samepage}
 \begin{verbatim}
-(def compilation-unit
-     (m-assoc* :syntax :compilation-unit
-               :package-decl (optional package-decl)
-               :import-decl (optional (many import-decl))
-               :type-decl (<|> class-decl interface-decl)
-               _ (many $whitespace)
-_ (optional (invalid-parse
-(<|> class-decl interface-decl)
-"Only one type per file permitted"))))
+unsigned int timeoutStackWindow(Stack stack) {
+  //printf("Find Free Packet between %d and %d\n", stack.window_low, stack.window_high);
+  unsigned int timeout = UINT_MAX;
+  unsigned int cursor = stack.window_low;
+  while (cursor <= stack.window_high && cursor <= stack.size) {
+    Packet * p_ptr = stack.packets+cursor;
+    unsigned int t = *(stack.timeouts+cursor);
+    //printf("Packet %d timeout at %d\n", p_ptr->sn, t);
+    if ((p_ptr->pt == DAT || p_ptr->pt == EOT) && t > 0 && t < timeout)timeout = t;
+    cursor++;
+  }
+  printf("Next timeout is %d\n", timeout);
+  
+  if (timeout == UINT_MAX)failure("Requesting next timeout without active transmission");
+  return timeout;
+}
 \end{verbatim}
 \end{samepage}
-
-Clearly, the code of the parser follows closely with the actual grammar
-definition.
-
-Finally, in order to invoke the parser to parse an input string, the user calls
-\texttt{parse} with the parser and the input string fed to it, and
-\texttt{parse} will indicate if the input is accepted, and the parse tree of
-accepted portion.
-
-For example, to use \texttt{literal} parser to parse
-\verb'"A \163tring literal example.\n"' (which will unescape to \texttt{"A
-string literal example."}), a call to \texttt{parse} will look like
-
-\begin{samepage}
-\begin{verbatim}
-(parse literal "\"A \\163tring literal example.\\n\"")
-\end{verbatim}
-
-\noindent which will yield an output
-
-\begin{verbatim}
-{:type :consumed, :value "A string literal example.\n", :rest ""}
-\end{verbatim}
-\end{samepage}
-
-This symbol \texttt{:consumed} indicates that the input string can be at least
-partially parsed, where the value of the parse is the correctly unescaped
-string. The rest of the input is empty, which means no more input is left, and
-thus the parser fully accepted the input. The rest contains the unparsed input
-to be consumed by later parsers. Only the top level parser requires an empty
-rest input after parsing.
-
-As another example, the output of the \texttt{compilation-unit} parser will be
-similar, such as
-
-\begin{samepage}
-\begin{verbatim}
-{:type :consumed,
-:value
-{:type-decl
-{:body
-({:body (),
-:params (),
-:id "m",
-:type "void",
-:modifiers ("public"),
-:syntax :method}),
-:implements nil,
-:extends nil,
-:id "X",
-:modifiers ("public"),
-:syntax :class},
-:import-decl (),
-:package-decl nil,
-:syntax :compilation-unit},
-:rest ""}
-\end{verbatim}
-\end{samepage}
-
-\subsection{Under the Hood}
-
-The implementation of the higher level parsers was much easier compared to the
-low level development of the parser library that brought us the productivity.
-
-An open source combinatory parser library for clojure, clarsec, was used us the
-base, which lies in \texttt{joosc/src/clarsec}. clarsec was a clojure parsec
-port. Same as parsec, clarsec is a monadic combinatory parser
-library. \texttt{core.clj} and \texttt{monad.clj} were stripped from the
-opensource distribution of clarsec. We wrote the rest, while heavily modified
-\texttt{core.clj} and \texttt{monad.clj}.
-
-(To briefly justify the use of an library, we believe using the library would
-allow us to concentrate on evaluating the effectiveness of the idea of
-combinatory parsing rather than implementing a fully featured parser library, as
-we believe that a simple but not as convenient combinator parser library would
-not be difficult to implement, as shown at least in CS 442. In effect, we were
-only intending to using many of the convenience provided by clarsec.)
-
-Although the clarsec library provides a fairly rich set of monadic parser
-combinators, we were still required to put a fair amount of effort to parse
-joos. Majority of the efforts were made to extend the syntax of the library to
-better represent the grammar, to implement extra combinators, and last but not
-least, to extend the library to provide us an illusion of maximal munch support.
-
-Thanks to the macro system provided by clojure, extending the grammar of clarsec
-in the way we wanted was possible. One notable instance is \texttt{m-assoc*},
-which helps annotate the AST. Annotation of AST was in essence done by applying
-a sequence of parser to the input, associating the result of each parser with a
-symbol.
-
-For example, to parse a formal parameter, the AST should indicate the type of
-the node as a formal parameter, as well as the type and the identifier of the
-parameter. It could be done as
-
-\begin{samepage}
-\begin{verbatim}
-(def param
-(let-bind [t type-
-i $id]
-               (result [:syntax :param
-                         :type t
-                         :id i])))
-\end{verbatim}
-\end{samepage}
-
-\noindent where \texttt{let-bind} will apply the parsers (in this case,
-\texttt{type-} and \verb'$id') sequentially on the input stream, and assign the
-result of each parser to the identifier specified (in this case, \texttt{t} and
-\texttt{i}). Then result will inject the annotated AST into the monadic value.
-
-Many other parser definitions follows the same construct, hereby makes creating
-a syntax for these kind of common construct reasonable. \texttt{m-assoc*} will
-expand exactly to this construct. The user provides the symbol associated with
-each parser, and the monadic value produced by a \texttt{m-assoc*} parser will
-be the annotated AST as expected. Therefore, the parser for formal parameters is
-defined in out implementation as
-
-\begin{samepage}
-\begin{verbatim}
-(def param
-(m-assoc* :syntax :param
-:type type-
-:id $id))
-\end{verbatim}
-\end{samepage}
-
-\noindent which expends to the \texttt{let-bind} implementation, except the
-variables \texttt{t} and \texttt{i} are replaced by fresh
-variables. \texttt{m-assoc*} significantly improved the readability of the code
-and productivity of the coder.
-
-Some other notable macros includes \texttt{def-token-lang} and \texttt{token} as
-used in \texttt{tokens.clj}. In essence, we used the powerful macro system of
-clojure to define a DSL to boost productivity and simplify representation.
-
-Besides DSL that make programming easier, many of the combinators required to
-make the combinatory parsing approach viable were not provided by clarsec, and
-many tweaks were needed to make clarsec easier to use. For example, clarsec did
-not provide a logic for parsing left recursive syntax, such as arithmetic
-expressions. Many commonly used combinators, such as the \texttt{between}
-combinator introduced earlier, are also extensions we wrote.
-
-Another notable examples is \verb'<$>', which applies a function to the AST
-returned by the parser, and injects the return value of the function. For
-example, to unescape octal character literal, a parse of an octal character
-literal needs to go through a conversion, which is done through java library
-function parseInt.
-
-\begin{verbatim}
-(def octal-ch (<$> #(-> % (subs 1) (Integer/parseInt 8) (char))
-                   #"\\[0-3]?[0-7]{1,2}"))
-\end{verbatim}
-
-This parser will parse a string that matches the a octal character, which is
-specified by the regular expression parser \verb'#"\\[0-3]?[0-7]{1,2}"'.
-Then the parse will be fed into the function
-
-\begin{verbatim}
-(<\$> \#(-> \% (subs 1) (Integer/parseInt 8) (char))
-\end{verbatim}
-
-\noindent where the first backslash is stripped off, and the rest, which stands
-for a octal, is parsed as an integer. At last the integer is coerced into a
-character.
-
-\begin{samepage}
-Other efforts in extending the combinator library includes efforts and
-combinators such as
-\begin{itemize}
-\item ability to take string and regular expressions as parsers
-\item \texttt{chainl}, which solves left recursion and mainly used in expression parsing,
-\item \texttt{between}, which parses the string in prefixed and postfixed by specific parse,
-\item \texttt{sep-by}, which parses the list of items separated by specific parse, such as comma,
-\item \texttt{optional}, which injects nil if the parser fails, rather than a failure,
-\item \texttt{invalid-parse}, which throws an exception to immediately stops parsing if a
-  invalid parse is parsed, for instance multiple class definitions in one file.
-\end{itemize}
-\end{samepage}
-
-With an extended library in hand, the only problem left was the lack of maximal
-munch support. To justify the importance of maximal munch, it is the simplest
-solution for parsing identifiers that are prefixed by keywords. There are other
-minor uses of maximal munch in the code. While an alternative solution to
-maximal munch might exist, we determined that to include a version of maximal
-munch to provide the functionality would be beneficial.
-
-Maximal munch is only used for scanning and tokenizing. Therefore a tokenizer
-layer is separated from the rest of the parser to deal with the actual character
-input stream, and thus the \texttt{tokens.clj}. The parsers in
-\texttt{tokens.clj} are still combinator parsers. However, the macros
-\texttt{def-token-lang} and \texttt{token} together makes the tokenizer parsers
-special. The token parsers defined in \texttt{def-token-lang} are grouped
-together in a global tokenizer table. Once any of the tokenizer is used to parse
-a input, essentially all tokenizers in the table are applied to the input. The
-longest parse from all the tokenizers will be chosen as the parse that will be
-returned, which will fail if the longest parse is not generated by the intended
-parser. A priority mechanism is also in place in the case 2 tokenizers, such as
-a keyword tokenizer and the identifier tokenizer, generates the same parse.
-
-This understandably made the performance bad. In practice the performance loss
-was not severe enough to concern us, and this approach was simple to implement
-and understand, therefore it was kept as is.
-
-\section{Execution and Weeding}
-
-Besides \texttt{tokens.clj} and \texttt{parser.clj}, which define the joos
-parser, the other files in \texttt{joosc/src/joosc}, \texttt{main.clj} and
-\texttt{phase1.clj}, serves as driver of the parser.
-
-In \texttt{phase1.clj}, the calling conventions are setup so that the compiler
-will call the compilation unit parser properly. An AST or an error will be
-returned from the parser, and the routines in \texttt{phase1.clj} will react
-accordingly.
-
-In addition, \texttt{phase1.clj} also implements the weeders that walk through
-the AST generated by the parser, and pattern matches certain syntax to transform
-it into more human readable form, or raise errors in the case that the parser is
-not the best place for implementing a check.
-
-Finally, in \texttt{main.clj}, which serves as the driver of the parser, calls to
-conventions setup in \texttt{phase1.clj} invokes the parser on the input file.
-
-\section{Testing}
-
-We frequently run the a1 Marmoset test cases against our compiler
-implementation, and for each step in the implementation we frequently tests the
-effectiveness of the components by simply calling the component with simple
-parameters. It is worth noting that with an interpreter, the later senario is
-extremely easy.
-
-
+This method and the previous one for expanding stack are written in such way that they are easy to be proven correct. This solid guarantee on correctness reduce the workload for unit testing as well. The rest if unit testing on various methods operate with stack. After making sure the stack is working up to its state machine design, the author is fairly confident that the program will behave correctly on all cases.
 \end{document}

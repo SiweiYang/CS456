@@ -12,18 +12,15 @@
 #include "packet_util.c"
 
 
-Stack iteration (int servfd, char* buffer, Stack stack) {  
+Stack iteration (int sockfd, char* buffer, Stack stack) {  
   bzero(buffer, PACKET_SIZE_MAX);
   
   struct sockaddr_in serv_addr;
   socklen_t servlen = sizeof(serv_addr);
   
-  int n = recvfrom(servfd, buffer, PACKET_SIZE_MAX, 0, (struct sockaddr *)&serv_addr ,&servlen);  
+  int n = recvfrom(sockfd, buffer, PACKET_SIZE_MAX, 0, (struct sockaddr *)&serv_addr ,&servlen);  
   if (n < 0)exception("ERROR reading from socket");
   //printf("READ %d bytes fom a reply\n", n);
-  
-  int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  //if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(servlen)) < 0)exception("ERROR connecting");
   
   Packet p = readFromBuffer(buffer, n);
   ppacket(p, "RECV");
@@ -32,7 +29,6 @@ Stack iteration (int servfd, char* buffer, Stack stack) {
     if (p.sn != checkStackWindow(stack)) {
       failure("Packet SN out of order on EOT");
       
-      close(sockfd);
       return iteration(sockfd, buffer, stack);
     }
     ppacket(p, "SEND");
@@ -41,21 +37,18 @@ Stack iteration (int servfd, char* buffer, Stack stack) {
     if (n < 0)exception("ERROR writing to socket");
     stack = addPacket(stack, p);
     
-    close(sockfd);
     return stack;
   }
   
   if (p.pt != DAT) {
     failure("Packet Type other than EOT and DAT aren't supportted");
     
-    close(sockfd);
     return iteration(sockfd, buffer, stack);
   }
   if (p.sn < stack.window_low || p.sn > stack.window_high) {
     failure("Packet SN out of order");
     
-    close(sockfd);
-    return iteration(servfd, buffer, stack);
+    return iteration(sockfd, buffer, stack);
   }
   
   
@@ -79,8 +72,7 @@ Stack iteration (int servfd, char* buffer, Stack stack) {
     if (n < 0)exception("ERROR writing to socket");
   }
   
-  close(sockfd);
-  return iteration(servfd, buffer, stack);
+  return iteration(sockfd, buffer, stack);
 }
 
 #define CONNECTION_INFO         "recvInfo"
@@ -134,6 +126,7 @@ int main(int argc, char *argv[])
     Stack stack = createStack(STACK_SIZE_MULTIPLIER);
     stack.window_high = stack.size;
     stack = iteration(sockfd, buffer, stack);
+    close(sockfd);
     
     {
       FILE* fp;
@@ -152,7 +145,7 @@ int main(int argc, char *argv[])
       
       fclose(fp);
     }
-    close(sockfd);
+    
     return 0; 
 }
 

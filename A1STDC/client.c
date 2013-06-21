@@ -156,7 +156,6 @@ int main(int argc, char *argv[])
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(portnumber);
   bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-  //if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)exception("ERROR connecting");
   
   // prepare a stack for transfer
   Stack stack;
@@ -181,7 +180,7 @@ int main(int argc, char *argv[])
       fread(p_ptr->payload, PACKET_SIZE_MAX - PACKET_SIZE_MIN, 1, fp);
       if(ferror(fp))exception("file IO failure\n");
       p_ptr->pl = ftell(fp) - pos + 12;
-      ppacket(*p_ptr, "CREATE");
+      //ppacket(*p_ptr, "CREATE");
       
       pos = ftell(fp);
       sn++;
