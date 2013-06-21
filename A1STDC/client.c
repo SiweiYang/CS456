@@ -74,7 +74,8 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
     Packet p = readFromBuffer(buffer, n);
     ppacket(p, "RECV");
     if (p.pt == EOT) {
-      if (p.sn != stack.size) {
+      p_ptr = stack.packets + p.sn;
+      if (p_ptr->pt != EOT) {
         failure("Packet SN out of order on EOT");
         return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
       }
@@ -93,6 +94,8 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
     
     stack = addPacket(stack, p);
     stack = updateStackWindow(stack, p);
+    // dummy window size management for now
+    if (stack.window_high > stack.size)stack.window_high = stack.size;
     
     // send EOT since all DAT transmissions are done
     if (stack.window_low == stack.size) {
@@ -112,6 +115,7 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
   return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
 }
 
+#define CONNECTION_INFO         "channelInfo"
 int main(int argc, char *argv[])
 {
   // prepare packets for transfer
@@ -119,9 +123,42 @@ int main(int argc, char *argv[])
      fprintf(stderr,"usage %s <timeout> <filename>\n", argv[0]);
      exit(0);
   }
+#ifdef GBN
+    printf("Running Sender based on GBN semantics");
+#endif
+#ifdef SR
+    printf("Running Sender based on SR semantics");
+#endif
+
   unsigned int timeout = atoi(argv[1]);
   char* filename = argv[2];
   
+  char hostname[513];
+  int portnumber;
+  {
+    FILE* fp;
+    fp=fopen(CONNECTION_INFO,"r");
+    if(fp==NULL)exception("connection info file not found\n");
+
+    fscanf(fp, "%s %d", hostname, &portnumber);
+    printf("Listening on %s:%d\n", hostname, portnumber);
+  }
+  
+  // establish socket channel
+  int sockfd, n;
+  struct hostent *server = gethostbyname("localhost");
+  if (server == NULL)exception("ERROR, no such host");
+  sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sockfd < 0)exception("ERROR opening socket");
+  
+  struct sockaddr_in serv_addr;
+  bzero((char *) &serv_addr, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(portnumber);
+  bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+  //if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)exception("ERROR connecting");
+  
+  // prepare a stack for transfer
   Stack stack;
   {
     FILE* fp;
@@ -132,7 +169,7 @@ int main(int argc, char *argv[])
     unsigned int length = ftell(fp);
     fseek(fp,0L,SEEK_SET);
     
-    Stack stack = createStack((length + PACKET_SIZE_MAX - 1) / PACKET_SIZE_MAX);
+    Stack stack = createStack((length + PACKET_DATA_SIZE_MAX - 1) / PACKET_DATA_SIZE_MAX);
     Packet p;
     unsigned int pos = ftell(fp);
     unsigned int sn = 0;
@@ -151,32 +188,6 @@ int main(int argc, char *argv[])
     }  
     fclose(fp);
   }
-  
-  // establish socket channel
-  int sockfd, portno, n;
-  
-  char hostname[513];
-  {
-    FILE* fp;
-    //fp=fopen("channelInfo","r");
-    fp=fopen("recvInfo","r");
-    if(fp==NULL)exception("file not found\n");
-
-    fscanf(fp, "%s %d", hostname, &portno);
-    printf("Listening on %s:%d\n", hostname, portno);
-  }
-  struct hostent *server = gethostbyname("localhost");
-  if (server == NULL)exception("ERROR, no such host");
-  sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  if (sockfd < 0)exception("ERROR opening socket");
-  
-  struct sockaddr_in serv_addr;
-  bzero((char *) &serv_addr, sizeof(serv_addr));
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(portno);
-  bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-  //if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)exception("ERROR connecting");
-  
   
   // start communication
   char buffer[PACKET_SIZE_MAX+1];

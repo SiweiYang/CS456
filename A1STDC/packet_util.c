@@ -4,7 +4,7 @@
 #ifndef PACKET_UTIL
 #define PACKET_UTIL
 
-
+#define STACK_SIZE_MULTIPLIER     23
 struct Stack {
   unsigned int size;
   unsigned int window_low;
@@ -36,6 +36,8 @@ Stack expandStack (Stack stack, unsigned int margin) {
   unsigned int size = stack.size + margin;
   printf("Expanding Stack by size of %d\n", margin);
   Stack s = createStack(size);
+  s.window_low = stack.window_low;
+  s.window_high = stack.window_high;
   
   memcpy(s.packets, stack.packets, stack.size * sizeof(Packet));
   memcpy(s.timeouts, stack.timeouts, stack.size * sizeof(unsigned int));
@@ -50,7 +52,9 @@ void destroyStack (Stack stack) {
 
 // changes written to heap memory direcly
 Stack modPacket (Stack stack, Packet p, unsigned int t) {
-  if (p.sn > stack.size)failure("Packet don't fit into RTP Stack\n");
+  while (stack.size <= p.sn) {
+    stack = expandStack(stack, STACK_SIZE_MULTIPLIER);
+  }
   if (t > 0)printf("MOD PKT %d to timeout at %d\n", p.sn, t);
   
   Packet * packet = stack.packets + p.sn;
@@ -70,6 +74,19 @@ unsigned int checkStackWindow(Stack stack) {
   }
   
   return stack.window_low + adv;
+}
+
+unsigned int cleanStackWindow(Stack stack) {
+  unsigned int cursor = stack.window_high;
+  while (cursor > stack.window_low) {
+    Packet * p_ptr = stack.packets+cursor;
+    unsigned int t = *(stack.timeouts+cursor);
+    
+    if (p_ptr->pl > 0 || t > 0)return cursor;
+    cursor++;
+  }
+  
+  return cursor;
 }
 
 Stack passiveUpdateStackWindow(Stack stack) {

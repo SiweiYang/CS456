@@ -11,17 +11,16 @@
 #include "types.c"
 #include "packet_util.c"
 
-#define STACK_SIZE_MULTIPLIER     23
+
 Stack iteration (int servfd, char* buffer, Stack stack) {  
   bzero(buffer, PACKET_SIZE_MAX);
   
   struct sockaddr_in serv_addr;
   socklen_t servlen = sizeof(serv_addr);
   
-  printf("READ %d bytes fom a reply\n", 000);
   int n = recvfrom(servfd, buffer, PACKET_SIZE_MAX, 0, (struct sockaddr *)&serv_addr ,&servlen);  
   if (n < 0)exception("ERROR reading from socket");
-  printf("READ %d bytes fom a reply\n", n);
+  //printf("READ %d bytes fom a reply\n", n);
   
   int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   //if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(servlen)) < 0)exception("ERROR connecting");
@@ -59,12 +58,11 @@ Stack iteration (int servfd, char* buffer, Stack stack) {
     return iteration(servfd, buffer, stack);
   }
   
-  while (stack.size <= p.sn) {
-    stack = expandStack(stack, STACK_SIZE_MULTIPLIER);
-    stack.window_high = stack.size;
-  }
+  
   p.pt = ACK;
   stack = addPacket(stack, p);
+  // dummy window size management for now
+  stack.window_high = stack.size;
   //stack = updateStackWindow(stack, p);
   
   p.pl = PACKET_SIZE_MIN;
@@ -85,13 +83,20 @@ Stack iteration (int servfd, char* buffer, Stack stack) {
   return iteration(servfd, buffer, stack);
 }
 
+#define CONNECTION_INFO         "recvInfo"
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
      fprintf(stderr,"usage %s <filename>\n", argv[0]);
      exit(0);
     }
-    
+#ifdef GBN
+    printf("Running Receiver based on GBN semantics\n");
+#endif
+#ifdef SR
+    printf("Running Receiver based on SR semantics\n");
+#endif
+
     int sockfd;
     struct sockaddr_in serv_addr;
     socklen_t srvlen = sizeof(serv_addr);
@@ -116,7 +121,7 @@ int main(int argc, char *argv[])
     
     {
       FILE* fp;
-      fp=fopen("recvInfo","w");
+      fp=fopen(CONNECTION_INFO,"w");
       if(fp==NULL)exception("file not found\n");
       
       fprintf(fp, "%s %d", hostname, portnumber);

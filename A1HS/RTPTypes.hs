@@ -5,6 +5,7 @@ import Data.Word (Word8, Word32)
 import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime)
 import Data.Bits ((.|.), shiftL, shiftR)
 import Data.List (sortBy)
+import Data.Maybe
 
 splitWord :: Word32 -> [Word8]
 splitWord w = [ fromIntegral (shiftR w 24),
@@ -26,10 +27,11 @@ serializePacketType DAT = 0
 serializePacketType ACK = 1
 serializePacketType EOT = 2
 
-deserializePacketType :: Word32 -> PacketType
-deserializePacketType 0 = DAT
-deserializePacketType 1 = ACK
-deserializePacketType 2 = EOT
+deserializePacketType :: Word32 -> Maybe PacketType
+deserializePacketType 0 = Just DAT
+deserializePacketType 1 = Just ACK
+deserializePacketType 2 = Just EOT
+deserializePacketType _ = Nothing
 
 type SequenceNumber = Word32
 type PacketLength = Word32
@@ -45,14 +47,17 @@ serializePacket (Packet pt sn pl payload) = (splitWord (serializePacketType pt))
                                             (splitWord pl) ++
                                             payload
 
-deserializePacket :: [Word8] -> Packet
-deserializePacket bytes = Packet pt sn pl payload
+deserializePacket :: [Word8] -> Maybe Packet
+deserializePacket bytes = if (fromIntegral (length payload)) + 12 /= pl || isNothing mpt
+                          then Nothing
+                          else Just (Packet pt sn pl payload)
                           where
                             ptw = take 4 bytes
                             snw = drop 4 (take 8 bytes)
                             plw = drop 8 (take 12 bytes)
                             payload = drop 12 bytes
-                            pt = deserializePacketType (joinWords ptw)
+                            mpt = deserializePacketType (joinWords ptw)
+                            Just pt = mpt
                             sn = joinWords snw
                             pl = joinWords plw
 
@@ -80,24 +85,34 @@ sortPacketStoreBySN ps = sortBy comparator ps
                              comparator (p1, t1) (p2, t2) = compare (sn p1) (sn p2)
 
 -- Not sure if needed
-checkPacketStore :: [(Packet, Word32)] -> Word32 -> Bool
-checkPacketStore [] num = False
-checkPacketStore ((p, _):ps) num = if (sn p) == num
-                                 then True
-                                 else checkPacketStore ps num
+queryPacketStore :: [(Packet, Word32)] -> Word32 -> Maybe (Packet, Word32)
+queryPacketStore [] num = Nothing
+queryPacketStore (pair:ps) num = if (sn p) == num
+                                 then Just pair
+                                 else queryPacketStore ps num
+                                 where
+                                   (p, t) = pair
 
-timeoutPacketStore :: [(Packet, Word32)] -> Word32
-timeoutPacketStore ps = if ((pt packet) == DAT) || ((pt packet) == EOT) && timeout > 0
-                        then timeout
-                        else 0
-                        where
-                          ps' = sortPacketStoreByTime ps
-                          (packet, timeout) = head ps'
+timeoutPacketStack :: RTPStack -> Word32
+timeoutPacketStack (RTPStack ps sw ew) = if (length ps') == 0 then 0
+                                         else if ((pt packet) == DAT) || ((pt packet) == EOT) && timeout > 0 then timeout 
+                                         else 0
+                                         where
+                                           ps' = sortPacketStoreByTime (filter (\(p, t)->(sn p) >= sw && (sn p) <= ew) ps)
+                                           (packet, timeout) = head ps'
+
+checkSpanningPacketStack :: [(Packet, Word32)] -> Word32
+checkSpanningPacketStack ps = checkSpanningPacketStackUnsafe (sortPacketStoreBySN ps) 0
+checkSpanningPacketStackUnsafe :: [(Packet, Word32)] -> Word32 -> Word32
+checkSpanningPacketStackUnsafe [] num = num
+checkSpanningPacketStackUnsafe ((p, _):ps) num = if (sn p) > num
+                                               then checkSpanningPacketStackUnsafe ps (sn p)
+                                               else checkSpanningPacketStackUnsafe ps num
+
 
 -- Note the number returned isn't inclusive
 checkTrailingPacketStack :: [(Packet, Word32)] -> Word32 -> Word32
 checkTrailingPacketStack ps num = checkTrailingPacketStackUnsafe (sortPacketStoreBySN ps) num
-
 checkTrailingPacketStackUnsafe :: [(Packet, Word32)] -> Word32 -> Word32
 checkTrailingPacketStackUnsafe [] num = num
 checkTrailingPacketStackUnsafe ((p, _):ps) num = if (sn p) == num && (pt p) == ACK
@@ -115,29 +130,27 @@ updatePacketStore (packet, timeout) [] = [(packet, timeout)]
 updatePacketStore (packet, timeout) ((p, t):ps) = if (sn p) == (sn packet)
                                                   then (packet, timeout):ps
                                                   else (p, t):(updatePacketStore (packet, timeout) ps)
-
+-- if accept return updated stack and reply packet
 onReceivingGBNDAT :: RTPStack -> Packet -> Maybe (RTPStack, Packet)
-onReceivingGBNDAT (RTPStack ps sw ew) packet = if sn' < sw || sn' > ew
+onReceivingGBNDAT (RTPStack ps sw ew) (Packet pt sn pl payload) = if sn < sw || sn > ew
                                             then Nothing
-                                            else Just (RTPStack ps' sw ew, (Packet ACK ((checkTrailingPacketStack ps' sn')-1) 12 []))
+                                            else Just (RTPStack ps' sw ew, (Packet ACK ((checkTrailingPacketStack ps' sw)-1) 12 []))
                                             where
-                                              sn' = (sn packet)
-                                              ps' = modifyPacketStore packet ps
+                                              ps' = modifyPacketStore (Packet ACK sn pl payload) ps
+onReceivingSRDAT :: RTPStack -> Packet -> Maybe (RTPStack, Packet)
+onReceivingSRDAT (RTPStack ps sw ew) (Packet pt sn pl payload) = if sn < sw || sn > ew
+                                              then Nothing
+                                              else Just (RTPStack ps' sw ew, (Packet ACK sn 12 []))
+                                              where
+                                                ps' = modifyPacketStore (Packet ACK sn pl payload) ps
+
 onReceivingGBNACK :: RTPStack -> Packet -> Maybe RTPStack
 onReceivingGBNACK (RTPStack ps sw ew) (Packet ACK sn pl payload) = if sn < sw || sn > ew
                                                   then Nothing
-                                                  else Just ns
+                                                  else Just stack'
                                                   where
                                                     -- comparison between sw and sn is implicitly done on the filtering
-                                                    ns = RTPStack (modifyPacketStore (Packet ACK sn pl payload) ps) (sn+1) (sn+10)
-
-onReceivingSRDAT :: RTPStack -> Packet -> Maybe (RTPStack, Packet)
-onReceivingSRDAT (RTPStack ps sw ew) packet = if sn' < sw || sn' > ew
-                                              then Nothing
-                                              else Just (RTPStack ps' sw ew, (Packet ACK sn' 12 []))
-                                              where
-                                                sn' = (sn packet)
-                                                ps' = modifyPacketStore packet ps
+                                                    stack' = RTPStack (modifyPacketStore (Packet ACK sn pl payload) ps) (sn+1) (sn+10)
 onReceivingSRACK :: RTPStack -> Packet -> Maybe RTPStack
 onReceivingSRACK (RTPStack ps sw ew) (Packet ACK sn pl payload) = if sn < sw || sn > ew
                                                     then Nothing
@@ -147,16 +160,6 @@ onReceivingSRACK (RTPStack ps sw ew) (Packet ACK sn pl payload) = if sn < sw || 
                                                       sw' = checkTrailingPacketStack ps' sw
                                                       ew' = sw'+9
 
-onReceivingEOT :: RTPStack -> Packet -> Maybe RTPStack
-onReceivingEOT (RTPStack ps sw ew) (Packet EOT sn pl payload) = if sn < sw || sn > ew
-                                                                then Nothing
-                                                                else if (length expectedEOTs) == 0
-                                                                     then Nothing
-                                                                     else Just (RTPStack ps' sw ew)
-                                                                where
-                                                                  expectedEOTs = map (\(p, t) -> p) (filter (\(p, t) -> (pt p) == EOT) ps)
-                                                                  ps' = modifyPacketStore (Packet EOT sn pl payload) ps
-
 allFreeDATPackets :: RTPStack -> [Packet]
 allFreeDATPackets (RTPStack ps sw ew) = map (\(p, t) -> p) fps
                                         where
@@ -164,7 +167,7 @@ allFreeDATPackets (RTPStack ps sw ew) = map (\(p, t) -> p) fps
 allActiveDATPackets :: RTPStack -> Word32 -> [Packet]
 allActiveDATPackets (RTPStack ps sw ew) threshold = map (\(p, t) -> p) fps
                                         where
-                                          fps = filter (\(p, t) -> if (pt p) == DAT && t > 0 && t <= threshold && (sn p) >= sw && (sn p) <= ew then True else False) ps
+                                          fps = filter (\(p, t) -> if (pt p) /= ACK && t > 0 && t <= threshold && (sn p) >= sw && (sn p) <= ew then True else False) ps
 
 p1 = Packet ACK 0 0 []
 p2 = Packet ACK 1 0 []

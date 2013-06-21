@@ -4,14 +4,15 @@
 #ifndef TYPES
 #define TYPES
 
-#define DAT                 0
-#define ACK                 1
-#define EOT                 2
+#define DAT                     0
+#define ACK                     1
+#define EOT                     2
 
-#define PACKET_SIZE_MIN     12
-#define PACKET_SIZE_MAX     512
+#define PACKET_SIZE_MIN         12
+#define PACKET_SIZE_MAX         512
+#define PACKET_DATA_SIZE_MAX    (PACKET_SIZE_MAX-PACKET_SIZE_MIN)
 
-#define WINDOW_SIZE       10
+#define WINDOW_SIZE             10
 struct Packet {
   unsigned int pt;
   unsigned int sn;
@@ -28,7 +29,7 @@ unsigned int EDSwap (unsigned int word) {
 }
 
 void ppacket (Packet p, char* act) {
-  char* pt;
+  char* pt = "UND";
   
   if (p.pt == DAT)pt = "DAT";
   if (p.pt == ACK)pt = "ACK";

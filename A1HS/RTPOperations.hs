@@ -7,6 +7,7 @@ import Network.Socket (Socket, SockAddr, withSocketsDo, AddrInfo, getAddrInfo, a
 import Network.Socket.ByteString (sendTo, recvFrom)
 import Data.ByteString (ByteString, empty, pack, unpack, append)
 import Data.List (sortBy)
+import Data.Maybe
 import Control.Monad (unless)
 
 targetSocketInfo :: HostName -> String -> IO AddrInfo
@@ -30,14 +31,24 @@ dynamicSocket hostname port = withSocketsDo $ do
                                 sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
                                 return sock
 
-sendRTP :: Socket -> Packet -> SockAddr -> IO Int
-sendRTP sock packet addr = sendTo sock (pack (serializePacket packet)) addr
+sendRTP :: Socket -> Packet -> SockAddr -> Word32 -> IO Int
+sendRTP sock packet addr timeout = do
+                             putStrLn $ "PKT SEND " ++ (show packet)
+                             sendTo sock (pack (serializePacket packet)) addr
 
-recvRTP :: Socket -> IO (SockAddr, Packet)
+recvRTP :: Socket -> IO (Maybe (SockAddr, Packet))
 recvRTP sock = withSocketsDo $ do
                  (msg, addr) <- recvFrom sock 512
                  let bytes = unpack msg
-                 return (addr, (deserializePacket bytes))
+                 let mpacket = deserializePacket bytes
+                 let Just packet = mpacket
+                 if isNothing mpacket
+                 then do
+                   putStrLn "Serialization of Packet failed"
+                   return Nothing
+                 else do
+                   putStrLn $ "PKT RECV " ++ (show packet)
+                   return (Just (addr, packet))
 
 createPackets :: Word32 -> ByteString -> [Packet]
 createPackets start msg = map (\(piece, id) -> Packet DAT id (fromIntegral (12 + (length piece))) piece) (zip pieces [start..])
@@ -62,7 +73,7 @@ refreshPacketStore sock ps threshold addr = sender sock addr threshold (sortPack
                                               sender sock addr threshold [] = do
                                                                                 return ()
                                               sender sock addr threshold ((packet, t):ps) = do
-                                                                                              unless (threshold > t) ((sendRTP sock packet addr) >>= (\i -> return ()))
+                                                                                              unless (threshold > t) ((sendRTP sock packet addr 0) >>= (\i -> return ()))
                                                                                               sender sock addr threshold ps
 --main = do
 --  let p1 = Packet ACK 0 0 []

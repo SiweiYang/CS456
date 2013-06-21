@@ -1,0 +1,12 @@
+This is program is built and testes on my home box which is a 64bit Ubuntu machine.
+
+All parts of this assignment is completed. They include but not limited to:
+
+  README
+  Makefile
+  Sender with GBN semantics
+  Receiver with GBN semantics
+  Sender with SR semantics
+  Receiver with SR semantics
+
+  a1doc.pdf
