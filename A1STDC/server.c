@@ -29,7 +29,7 @@ Stack iteration (int sockfd, char* buffer, Stack stack) {
     if (p.sn != checkStackWindow(stack)) {
       failure("Packet SN out of order on EOT");
       
-      return iteration(sockfd, buffer, stack);
+      return stack;
     }
     ppacket(p, "SEND");
     writeToBuffer(buffer, PACKET_SIZE_MAX, p);
@@ -37,18 +37,19 @@ Stack iteration (int sockfd, char* buffer, Stack stack) {
     if (n < 0)exception("ERROR writing to socket");
     stack = addPacket(stack, p);
     
+    stack.size = 0;
     return stack;
   }
   
   if (p.pt != DAT) {
     failure("Packet Type other than EOT and DAT aren't supportted");
     
-    return iteration(sockfd, buffer, stack);
+    return stack;
   }
   if (p.sn < stack.window_low || p.sn > stack.window_high) {
     failure("Packet SN out of order");
     
-    return iteration(sockfd, buffer, stack);
+    return stack;
   }
   
   
@@ -125,7 +126,7 @@ int main(int argc, char *argv[])
     char buffer[PACKET_SIZE_MAX+1];
     Stack stack = createStack(STACK_SIZE_MULTIPLIER);
     stack.window_high = stack.size;
-    stack = iteration(sockfd, buffer, stack);
+    while (stack.size > 0)stack = iteration(sockfd, buffer, stack);    
     close(sockfd);
     
     {

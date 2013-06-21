@@ -17,7 +17,7 @@ void error(const char *msg)
     exit(0);
 }
 
-void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack stack, struct timeval start, unsigned int timeout) {
+Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack stack, struct timeval start, unsigned int timeout) {
   bzero(buffer, PACKET_SIZE_MAX);
   struct timeval timer;
   struct timezone tz;
@@ -36,7 +36,7 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
     if (n < 0)exception("ERROR writing to socket");
     
     stack = modPacket(stack, *p_ptr, ct + timeout);
-    return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
+    return stack;
   }
   
   p_ptr = findActivePacket(stack, ct);
@@ -48,7 +48,7 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
     if (n < 0)exception("ERROR writing to socket");
     
     stack = modPacket(stack, *p_ptr, ct + timeout);
-    return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
+    return stack;
   }
   
   unsigned int wait = timeoutStackWindow(stack) - ct;
@@ -79,19 +79,20 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
       p_ptr = stack.packets + p.sn;
       if (p_ptr->pt != EOT) {
         failure("Packet SN out of order on EOT");
-        return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
+        return stack;
       }
       
-      return;
+      stack.size = 0;
+      return stack;
     }
     if (p.pt != ACK) {
       failure("Packet type other than ACK shouldn't get here");
-      return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
+      return stack;
     }
     
     if (p.sn < stack.window_low || p.sn > stack.window_high) {
       failure("Packet SN out of order");
-      return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
+      return stack;
     }
     
     stack = addPacket(stack, p);
@@ -115,7 +116,7 @@ void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack sta
     }
   } else failure("TIMEOUT");
   
-  return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
+  return stack;
 }
 
 #define CONNECTION_INFO         "channelInfo"
@@ -196,7 +197,7 @@ int main(int argc, char *argv[])
   struct timeval start;
   struct timezone tz;
   gettimeofday(&start, &tz);
-  iteration(sockfd, (struct sockaddr *)&serv_addr, buffer, stack, start, timeout);
+  while (stack.size > 0)stack = iteration(sockfd, (struct sockaddr *)&serv_addr, buffer, stack, start, timeout);
   
   // clear footprint, and exit
   destroyStack(stack);
