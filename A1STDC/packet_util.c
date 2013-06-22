@@ -117,12 +117,13 @@ unsigned int timeoutStackWindow(Stack stack) {
 
 Stack updateStackWindow (Stack stack, Packet p) {
   if (p.sn < stack.window_low || p.sn > stack.window_high || p.sn > stack.size)failure("Packet SN out of bound");
+  Stack old = stack;
   
   if (p.pt == DAT) {
     // sender needs a window twice big to make sure client window is covered
     unsigned int adv = checkStackWindow(stack);
-    if (adv + WINDOW_SIZE > stack.window_high) {
-      adv = adv + WINDOW_SIZE - stack.window_high;
+    if (adv - stack.window_low > WINDOW_SIZE) {
+      adv = adv - WINDOW_SIZE - stack.window_low;
       stack.window_low += adv;
       stack.window_high += adv;
     }
@@ -140,6 +141,7 @@ Stack updateStackWindow (Stack stack, Packet p) {
 #endif
   }
   
+  if (old.window_low != stack.window_low || old.window_high != stack.window_high)printf("Update Stack Window to %d and %d\n", stack.window_low, stack.window_high);
   return stack;
 }
 
