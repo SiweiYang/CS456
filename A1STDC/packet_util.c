@@ -122,11 +122,8 @@ Stack updateStackWindow (Stack stack, Packet p) {
   if (p.pt == DAT) {
     // sender needs a window twice big to make sure client window is covered
     unsigned int adv = checkStackWindow(stack);
-    if (adv - stack.window_low > WINDOW_SIZE) {
-      adv = adv - WINDOW_SIZE - stack.window_low;
-      stack.window_low += adv;
-      stack.window_high += adv;
-    }
+    if (adv + WINDOW_SIZE > stack.window_high)stack.window_high = adv + WINDOW_SIZE;
+    if (adv > WINDOW_SIZE && adv - WINDOW_SIZE > stack.window_low)stack.window_low = adv - WINDOW_SIZE;
   }
   
   if (p.pt == ACK) {

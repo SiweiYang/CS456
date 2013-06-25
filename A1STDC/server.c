@@ -133,7 +133,6 @@ int main(int argc, char *argv[])
     // start receiving transmission
     char buffer[PACKET_SIZE_MAX+1];
     Stack stack = createStack(STACK_SIZE_MULTIPLIER);
-    stack.window_high += 32 - WINDOW_SIZE;
     while (stack.size > 0)stack = iteration(sockfd, buffer, stack);    
     close(sockfd);
     
