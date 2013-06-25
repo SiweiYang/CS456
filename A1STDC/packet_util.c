@@ -68,12 +68,12 @@ Stack addPacket (Stack stack, Packet p) {return modPacket(stack, p, 0);}
 
 unsigned int checkStackWindow(Stack stack) {
   unsigned int adv = 0;
-  while (stack.window_low + adv < stack.size) {
-    if ((stack.packets + stack.window_low + adv)->pt != ACK)break;
+  while (adv < stack.size) {
+    if ((stack.packets + adv)->pt != ACK)break;
     adv++;
   }
   
-  return stack.window_low + adv;
+  return adv;
 }
 
 unsigned int cleanStackWindow(Stack stack) {
@@ -117,26 +117,18 @@ unsigned int timeoutStackWindow(Stack stack) {
 
 Stack updateStackWindow (Stack stack, Packet p) {
   if (p.sn < stack.window_low || p.sn > stack.window_high || p.sn > stack.size)failure("Packet SN out of bound");
+  Stack old = stack;
   
   if (p.pt == DAT) {
-    // receiver can choose to not have a sending window
-    /*
-#ifdef GBN    
-    unsigned int adv = p.sn - stack.window_low + 1;
-    stack.window_low += adv;
-    stack.window_high += adv;
-    
-#endif
-
-#ifdef SR
-    stack = updateStackWindow(stack);
-#endif
-    */
+    // sender needs a window twice big to make sure client window is covered
+    unsigned int adv = checkStackWindow(stack);
+    if (adv + WINDOW_SIZE > stack.window_high)stack.window_high = adv + WINDOW_SIZE;
+    if (adv > WINDOW_SIZE && adv - WINDOW_SIZE > stack.window_low)stack.window_low = adv - WINDOW_SIZE;
   }
   
   if (p.pt == ACK) {
 #ifdef GBN
-    unsigned int adv = p.sn - stack.window_low + 1;
+    unsigned int adv = p.sn + 1 - stack.window_low;
     stack.window_low += adv;
     stack.window_high += adv;
 #endif
@@ -146,6 +138,7 @@ Stack updateStackWindow (Stack stack, Packet p) {
 #endif
   }
   
+  if (old.window_low != stack.window_low || old.window_high != stack.window_high)printf("Update Stack Window to %d and %d\n", stack.window_low, stack.window_high);
   return stack;
 }
 

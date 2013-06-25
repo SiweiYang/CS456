@@ -45,9 +45,7 @@ Stack updateStackWindow (Stack stack, Packet p) {
     unsigned int adv = p.sn - stack.window_low + 1;
     stack.window_low += adv;
     stack.window_high += adv;
-    
 #endif
-
 #ifdef SR
     stack = updateStackWindow(stack);
 #endif
@@ -60,12 +58,10 @@ Stack updateStackWindow (Stack stack, Packet p) {
     stack.window_low += adv;
     stack.window_high += adv;
 #endif
-
 #ifdef SR
     stack = passiveUpdateStackWindow(stack);
 #endif
   }
-  
   return stack;
 }
 \end{verbatim}
@@ -94,7 +90,8 @@ The importance of self-managing data structure is often over looked. But here it
 
 \section{Testing and Quality Assurance}
 \subsection{Black Box Testing}
-The program has been tested with two black box testing techniques: random data attack and integration testing. The data attack concerns the robustness of the program: will the program crash on any possible input? Not only out of order packet but also random message that does not deserialize to packet are thrown at both the client and the server to test their robustness. And integration testing is simply transferring data files, big and small, with a check on file content after. Different timeout configurations are tested on each cases. \textbf{Note: during transmission of large file over really unreliable channel, the program do fail when the program stack grows out of bound(at depth 6000+). This is GCC's fault for not doing tail recursion properly. And accomodate to that violates the design of this program. Thus the author left this as an issue for now, and is trying to make the tail recursion happen.}
+The program has been tested with two black box testing techniques: random data attack and integration testing. The data attack concerns the robustness of the program: will the program crash on any possible input? Not only out of order packet but also random message that does not deserialize to packet are thrown at both the client and the server to test their robustness. And integration testing is simply transferring data files, big and small, with a check on file content after. Different timeout configurations are tested on each cases. \\\textbf{Note: during transmission of large file over really unreliable channel, the program do fail when the program stack grows out of bound(at depth 6000+). This is GCC's fault for not doing tail recursion properly. And accomodate to that violates the design of this program. Thus the author left this as an issue for now, and is trying to make the tail recursion happen.}
+\\\textbf{Note2: The author patched this issue but leave the origin version in as the original program reflects the design better. Detailed explaination in the next section.}
 
 \subsection{White Box Assurance}
 While black-box testing concerns program behavior on typical use case, to provide quality assurance, analysis of program correctness has to be done. To help with that, before anything else, the program is written with defensive programming in mind and trades performance with provability sometime:
@@ -119,4 +116,20 @@ unsigned int timeoutStackWindow(Stack stack) {
 \end{verbatim}
 \end{samepage}
 This method and the previous one for expanding stack are written in such way that they are easy to be proven correct. This solid guarantee on correctness reduce the workload for unit testing as well. The rest if unit testing on various methods operate with stack. After making sure the stack is working up to its state machine design, the author is fairly confident that the program will behave correctly on all cases.
+
+\section{Tail Recursion Optimization Problem}
+\begin{verbatim}
+#include <stdio.h>
+
+int r() {
+  perror("recursion");
+  return r();
+}
+int main(int argc, char *argv[]) {
+  return r();
+}
+\end{verbatim}
+compile with -O2 and run the run program in GDB, break at any point and it shows no piling stack. Yet, the author's program in file \texttt{client\_csp.c} and \texttt{server\_csp.c} do not get this optimization which cause the stack to explode.
+
 \end{document}
+

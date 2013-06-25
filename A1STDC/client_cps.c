@@ -17,7 +17,7 @@ void error(const char *msg)
     exit(0);
 }
 
-Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack stack, struct timeval start, unsigned int timeout) {
+void iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack stack, struct timeval start, unsigned int timeout) {
   bzero(buffer, PACKET_SIZE_MAX);
   struct timeval timer;
   struct timezone tz;
@@ -30,29 +30,25 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
   p_ptr = findFreePacket(stack);
   if (p_ptr != NULL) {
     printf("Sending free packet\n");
-    Packet p = *p_ptr;
-    ppacket(p, "SEND");
-    p.sn = p.sn % 32;
-    writeToBuffer(buffer, PACKET_SIZE_MAX, p);
+    ppacket(*p_ptr, "SEND");
+    writeToBuffer(buffer, PACKET_SIZE_MAX, *p_ptr);
     int n = sendto(sockfd, buffer, p_ptr->pl, 0, dest_addr, sizeof(*dest_addr));
     if (n < 0)exception("ERROR writing to socket");
     
     stack = modPacket(stack, *p_ptr, ct + timeout);
-    return stack;
+    return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
   }
   
   p_ptr = findActivePacket(stack, ct);
   if (p_ptr != NULL) {
     printf("Sending active packet\n");
-    Packet p = *p_ptr;
-    ppacket(p, "SEND");
-    p.sn = p.sn % 32;
-    writeToBuffer(buffer, PACKET_SIZE_MAX, p);
+    ppacket(*p_ptr, "SEND");
+    writeToBuffer(buffer, PACKET_SIZE_MAX, *p_ptr);
     int n = sendto(sockfd, buffer, p_ptr->pl, 0, dest_addr, sizeof(*dest_addr));
     if (n < 0)exception("ERROR writing to socket");
     
     stack = modPacket(stack, *p_ptr, ct + timeout);
-    return stack;
+    return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
   }
   
   unsigned int wait = timeoutStackWindow(stack) - ct;
@@ -79,25 +75,23 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
     
     Packet p = readFromBuffer(buffer, n);
     ppacket(p, "RECV");
-    while (p.sn < stack.window_low)p.sn += 32;
     if (p.pt == EOT) {
       p_ptr = stack.packets + p.sn;
       if (p_ptr->pt != EOT) {
         failure("Packet SN out of order on EOT");
-        return stack;
+        return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
       }
       
-      stack.size = 0;
-      return stack;
+      return;
     }
     if (p.pt != ACK) {
       failure("Packet type other than ACK shouldn't get here");
-      return stack;
+      return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
     }
     
     if (p.sn < stack.window_low || p.sn > stack.window_high) {
       failure("Packet SN out of order");
-      return stack;
+      return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
     }
     
     stack = addPacket(stack, p);
@@ -113,16 +107,15 @@ Stack iteration (int sockfd, struct sockaddr * dest_addr, char* buffer, Stack st
        p.pl = PACKET_SIZE_MIN;
        
        ppacket(p, "SEND");
-       stack = modPacket(stack, p, ct + timeout);
-       
-       p.sn = p.sn % 32;
        writeToBuffer(buffer, PACKET_SIZE_MAX, p);
        n = sendto(sockfd, buffer, p.pl, 0, dest_addr, sizeof(*dest_addr));
        if (n < 0)exception("ERROR writing to socket");
+       
+       stack = modPacket(stack, p, ct + timeout);
     }
   } else failure("TIMEOUT");
   
-  return stack;
+  return iteration(sockfd, dest_addr, buffer, stack, start, timeout);
 }
 
 #define CONNECTION_INFO         "channelInfo"
@@ -203,7 +196,7 @@ int main(int argc, char *argv[])
   struct timeval start;
   struct timezone tz;
   gettimeofday(&start, &tz);
-  while (stack.size > 0)stack = iteration(sockfd, (struct sockaddr *)&serv_addr, buffer, stack, start, timeout);
+  iteration(sockfd, (struct sockaddr *)&serv_addr, buffer, stack, start, timeout);
   
   // clear footprint, and exit
   destroyStack(stack);

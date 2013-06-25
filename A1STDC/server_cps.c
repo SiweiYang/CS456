@@ -11,6 +11,7 @@
 #include "types.c"
 #include "packet_util.c"
 
+
 Stack iteration (int sockfd, char* buffer, Stack stack) {  
   bzero(buffer, PACKET_SIZE_MAX);
   
@@ -22,65 +23,55 @@ Stack iteration (int sockfd, char* buffer, Stack stack) {
   //printf("READ %d bytes fom a reply\n", n);
   
   Packet p = readFromBuffer(buffer, n);
-  while (p.sn < stack.window_low)p.sn += 32;
   ppacket(p, "RECV");
   // only possible exit
   if (p.pt == EOT) {
     if (p.sn != checkStackWindow(stack)) {
       failure("Packet SN out of order on EOT");
       
-      return stack;
+      return iteration(sockfd, buffer, stack);
     }
     ppacket(p, "SEND");
-    stack = addPacket(stack, p);
-    
-    p.sn = p.sn % 32;
     writeToBuffer(buffer, PACKET_SIZE_MAX, p);
     int n = sendto(sockfd, buffer, p.pl, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));    
     if (n < 0)exception("ERROR writing to socket");
+    stack = addPacket(stack, p);
     
-    stack.size = 0;
     return stack;
   }
   
   if (p.pt != DAT) {
     failure("Packet Type other than EOT and DAT aren't supportted");
     
-    return stack;
+    return iteration(sockfd, buffer, stack);
   }
   if (p.sn < stack.window_low || p.sn > stack.window_high) {
     failure("Packet SN out of order");
     
-    return stack;
+    return iteration(sockfd, buffer, stack);
   }
   
-  stack = updateStackWindow(stack, p);
   
   p.pt = ACK;
-  stack = addPacket(stack, p);  
+  stack = addPacket(stack, p);
+  // dummy window size management for now
+  stack.window_high = stack.size;
+  //stack = updateStackWindow(stack, p);
   
   p.pl = PACKET_SIZE_MIN;
 #ifdef GBN
-  unsigned int cursor = checkStackWindow(stack);
-  // don't reply if no packet is ready
-  if (cursor) {
-    p.sn = cursor - 1;
-    ppacket(p, "SEND");
-    p.sn = p.sn % 32;
-    writeToBuffer(buffer, PACKET_SIZE_MAX, p);
-    int n = sendto(sockfd, buffer, p.pl, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-    if (n < 0)exception("ERROR writing to socket");
-  }
+  p.sn = checkStackWindow(stack) - 1;
 #endif
 #ifdef SR
+  // don't need to do anything
+#endif
   ppacket(p, "SEND");
-  {
-    p.sn = p.sn % 32;
+  if (p.sn >= 0){
     writeToBuffer(buffer, PACKET_SIZE_MAX, p);
     int n = sendto(sockfd, buffer, p.pl, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     if (n < 0)exception("ERROR writing to socket");
   }
-#endif
+  
   return iteration(sockfd, buffer, stack);
 }
 
@@ -133,7 +124,8 @@ int main(int argc, char *argv[])
     // start receiving transmission
     char buffer[PACKET_SIZE_MAX+1];
     Stack stack = createStack(STACK_SIZE_MULTIPLIER);
-    while (stack.size > 0)stack = iteration(sockfd, buffer, stack);    
+    stack.window_high = stack.size;
+    stack = iteration(sockfd, buffer, stack);
     close(sockfd);
     
     {
