@@ -2,6 +2,9 @@
 *\.hs~
 *\.hi
 *\.o
+*\.aux
+*\.log
+*\.gz
 
 A1STDC/client
 A1STDC/server
