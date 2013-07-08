@@ -1,15 +1,15 @@
 # --- macros
 CC=ghc
-CFLAGS= -g -O2
+CFLAGS= -debug
 #LDFLAGS= -L-Wl,--stack_size,0x1000000000000
 OBJECTS= pvr
 
 # --- targets
 all: $(OBJECTS)
 
-pvr: types.c packet_util.c server.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -DGBN server.c -o $@
+pvr: Router.hs RouterIO.hs Main.hs
+	$(CC) $(CFLAGS) $(LDFLAGS) --make Main -o $@
 
 # --- remove binary and executable files
 clean:
-	rm -f $(OBJECTS) *~
+	rm -f $(OBJECTS) *~ *.hi *.o
