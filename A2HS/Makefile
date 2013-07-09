@@ -12,4 +12,4 @@ pvr: Router.hs RouterIO.hs Main.hs
 
 # --- remove binary and executable files
 clean:
-	rm -f $(OBJECTS) *~ *.hi *.o
+	rm -f $(OBJECTS) *~ *.hi *.o table.*
