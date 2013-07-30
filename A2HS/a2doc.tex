@@ -10,129 +10,15 @@
 \maketitle
 
 \section{Overview}
-The goal of this assignment is to demonstrate the heuristics of path vector routing and examine its behavior upon typical usage and abnormal scenario like link breakdown and transient loop.
+The goal of this assignment is to demonstrate the heuristics of path vector routing and examine its behavior upon typical usage and abnormal scenario like link breakdown and transient loop. An example is provided to highlight the mechanics of path vector routing upon topology changes.
 
-\section{Overview}
-The goal of this assigment is to implement programs that can reliably transfer data over unreliable communication channels. The reliable transfer protocol is designed with client-server model for the sake of simplicity. Both flavor of the protocol, namely \texttt{Go-Back-N} and \texttt{Selective Repeat}, are provided for inspection.
+\section{Program Breakdown}
 
-The programs delivered are configured to transfer a file from client side to server side over a provided, most likely unreliable, channel to demonstrate the correctness of the protocol, and performance evaluation. But the instruments and modules developed for the programs can be packaged with other programs for rapid adoption of the reliable transfer protocol.
+\section{Algorithm Walk-through}
 
-\section{Design Philosophy}
-\subsection{Layered Design}
-The complexity of this program lies in the mixture of dispatch/processing logic and transmission facility. So the strategy of layered design is applied where the transmission is taken care by a data structure:
-\begin{samepage}
-\begin{verbatim}
-struct Stack {
-  unsigned int size;
-  unsigned int window_low;
-  unsigned int window_high;
-  Packet * packets;
-  unsigned int * timeouts;
-};
-typedef struct Stack Stack;
-\end{verbatim}
-\end{samepage}
-Thus, the program can sequantially process dispatching and transmission in different spaces in a \href{http://en.wikipedia.org/wiki/Continuation-passing_style}{Continuation Passing Style} style.
 
-\subsection{State Centric}
-To manage transmission effectively, a suit of the operations are created with a focus on the state of transmission. For instance:
-\begin{samepage}
-\begin{verbatim}
-Stack updateStackWindow (Stack stack, Packet p) {
-  if (p.sn < stack.window_low || p.sn > stack.window_high || p.sn > stack.size)failure("Packet SN out of bound");
-  
-  if (p.pt == DAT) {
-    // receiver can choose to not have a sending window
-    /*
-#ifdef GBN    
-    unsigned int adv = p.sn - stack.window_low + 1;
-    stack.window_low += adv;
-    stack.window_high += adv;
-#endif
-#ifdef SR
-    stack = updateStackWindow(stack);
-#endif
-    */
-  }
-  
-  if (p.pt == ACK) {
-#ifdef GBN
-    unsigned int adv = p.sn - stack.window_low + 1;
-    stack.window_low += adv;
-    stack.window_high += adv;
-#endif
-#ifdef SR
-    stack = passiveUpdateStackWindow(stack);
-#endif
-  }
-  return stack;
-}
-\end{verbatim}
-\end{samepage}
-The method operate the transmission stack on receiving a new packet as if it operates a state machine. Thus, cleanly encapsulate the inner working of the stack. Let the user interact with the stack only based on its state.
-
-\subsection{Self-managing Data Structure}
-Related to the state machine centric approach is the adoption of self-managing data structure. This is usually taken care of by container types in the standard library. However, C is no normal language in which the programmer has to spend effort creating self-managing data structure:
-\begin{samepage}
-\begin{verbatim}
-Stack expandStack (Stack stack, unsigned int margin) {
-  unsigned int size = stack.size + margin;
-  printf("Expanding Stack by size of %d\n", margin);
-  Stack s = createStack(size);
-  s.window_low = stack.window_low;
-  s.window_high = stack.window_high;
-  
-  memcpy(s.packets, stack.packets, stack.size * sizeof(Packet));
-  memcpy(s.timeouts, stack.timeouts, stack.size * sizeof(unsigned int));
-  
-  return s;
-}
-\end{verbatim}
-\end{samepage}
-The importance of self-managing data structure is often over looked. But here it is key to support potentially unlimited state created while receiving packets.
-
-\section{Testing and Quality Assurance}
-\subsection{Black Box Testing}
-The program has been tested with two black box testing techniques: random data attack and integration testing. The data attack concerns the robustness of the program: will the program crash on any possible input? Not only out of order packet but also random message that does not deserialize to packet are thrown at both the client and the server to test their robustness. And integration testing is simply transferring data files, big and small, with a check on file content after. Different timeout configurations are tested on each cases. \\\textbf{Note: during transmission of large file over really unreliable channel, the program do fail when the program stack grows out of bound(at depth 6000+). This is GCC's fault for not doing tail recursion properly. And accomodate to that violates the design of this program. Thus the author left this as an issue for now, and is trying to make the tail recursion happen.}
-\\\textbf{Note2: The author patched this issue but leave the origin version in as the original program reflects the design better. Detailed explaination in the next section.}
-
-\subsection{White Box Assurance}
-While black-box testing concerns program behavior on typical use case, to provide quality assurance, analysis of program correctness has to be done. To help with that, before anything else, the program is written with defensive programming in mind and trades performance with provability sometime:
-\begin{samepage}
-\begin{verbatim}
-unsigned int timeoutStackWindow(Stack stack) {
-  //printf("Find Free Packet between %d and %d\n", stack.window_low, stack.window_high);
-  unsigned int timeout = UINT_MAX;
-  unsigned int cursor = stack.window_low;
-  while (cursor <= stack.window_high && cursor <= stack.size) {
-    Packet * p_ptr = stack.packets+cursor;
-    unsigned int t = *(stack.timeouts+cursor);
-    //printf("Packet %d timeout at %d\n", p_ptr->sn, t);
-    if ((p_ptr->pt == DAT || p_ptr->pt == EOT) && t > 0 && t < timeout)timeout = t;
-    cursor++;
-  }
-  printf("Next timeout is %d\n", timeout);
-  
-  if (timeout == UINT_MAX)failure("Requesting next timeout without active transmission");
-  return timeout;
-}
-\end{verbatim}
-\end{samepage}
-This method and the previous one for expanding stack are written in such way that they are easy to be proven correct. This solid guarantee on correctness reduce the workload for unit testing as well. The rest if unit testing on various methods operate with stack. After making sure the stack is working up to its state machine design, the author is fairly confident that the program will behave correctly on all cases.
-
-\section{Tail Recursion Optimization Problem}
-\begin{verbatim}
-#include <stdio.h>
-
-int r() {
-  perror("recursion");
-  return r();
-}
-int main(int argc, char *argv[]) {
-  return r();
-}
-\end{verbatim}
-compile with -O2 and run the run program in GDB, break at any point and it shows no piling stack. Yet, the author's program in file \texttt{client\_csp.c} and \texttt{server\_csp.c} do not get this optimization which cause the stack to explode.
+\section{Transient Loop Example}
+Transient Loop forms when
 
 \end{document}
 
