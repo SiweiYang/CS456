@@ -12,12 +12,17 @@ main :: IO ()
 main = do
          v:_ <- getArgs
          edges <- readEdges "edges" v
-         putStrLn (show edges)
+         --putStrLn (show edges)
          let dests = map (\(RouteEdge v1 v2 ecost) -> v2) edges
          paths <- mapM readPaths dests
+         --putStrLn (show paths)
          let paths' = concat ((map edgeToPath edges):paths)
-         let paths'' = foldr (\edge paths -> proposeEdge paths edge) paths' edges
+         --putStrLn (show (map (\edge -> proposeEdge paths' edge) edges))
+         --let paths'' = foldr (\edge paths -> proposeEdge paths edge) paths' edges
+         let paths'' = concat (map (\edge -> proposeEdge paths' edge) edges)
+         --putStrLn (show paths'')
          let paths''' = cleanPaths (excludeNode paths'' v)
+         --putStrLn (show paths''')
          writePaths v paths'''
-         putStrLn (show paths''')
+         
          return ()

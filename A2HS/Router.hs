@@ -11,7 +11,7 @@ instance Show RoutePath where
                                   dest = last path
                                   intermediate = init path
                                   v:vs = intermediate
-                                  out = foldr (\v' out -> out ++ " " ++ v') v vs
+                                  out = foldr (\v' out -> out ++ " " ++ v') v (reverse vs)
 
 edgeToPath :: RouteEdge -> RoutePath
 edgeToPath (RouteEdge v1 v2 ecost) = (RoutePath (v1:v2:[]) ecost)

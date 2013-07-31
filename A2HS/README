@@ -1,12 +1,10 @@
-This is program is built and testes on my home box which is a 64bit Ubuntu machine.
+This is program is developed, built and testes on the ubuntu machine from student.cs cluster.
 
 All parts of this assignment is completed. They include but not limited to:
 
   README
   Makefile
-  Sender with GBN semantics
-  Receiver with GBN semantics
-  Sender with SR semantics
-  Receiver with SR semantics
+  Node Simulator - pvr
+  Transient Loop example
 
   a2doc.pdf

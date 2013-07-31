@@ -22,7 +22,8 @@ readEdges filename root = do
                             constructor (v1:v2:cost:[])= [(RouteEdge v1 v2 (read cost)), (RouteEdge v2 v1 (read cost))]
                             constructor []= []
 
--- 
+-- intelligently try extend all paths with the provided edge
+-- as long as a path is starting from the inferred source node, the path will be preserved
 proposeEdge :: [RoutePath] -> RouteEdge -> [RoutePath]
 proposeEdge paths (RouteEdge v1 v2 ecost) = filter (\(RoutePath path pcost) -> head path == v1) path'
                                             where
@@ -32,7 +33,7 @@ proposeEdge paths (RouteEdge v1 v2 ecost) = filter (\(RoutePath path pcost) -> h
 -- read paths from the specified table file
 -- silently return empty list when file not exists
 readPaths :: String -> IO [RoutePath]
-readPaths v = catch readPath' (\e -> print e >> return [])
+readPaths v = catch readPath' (\e -> putStrLn ("table." ++ v ++ " does not exists, assume no routes provided.") >> return [])
               where
                 readPath' = do
                   content <- readFile ("table." ++ v)
@@ -55,10 +56,10 @@ cleanPaths paths = foldr (\p paths -> updatePath paths p) [] paths
                      updatePath :: [RoutePath] -> RoutePath -> [RoutePath]
                      updatePath [] p = [p]
                      updatePath (p:paths) p' = if (head (path p)) == (head (path p')) && (last (path p)) == (last (path p'))
-                                               then case of compare (pcost p) > (pcost p')
+                                               then case compare (pcost p) (pcost p') of
                                                     GT -> p':paths
                                                     LT -> p:paths
-                                                    EQ -> if head (path p)) > (head (path p') then p':paths else p:paths
+                                                    EQ -> if (head (path p)) > (head (path p')) then p':paths else p:paths
                                                else p:(updatePath paths p')
                      
 
@@ -75,3 +76,6 @@ writePaths v paths = do
 -- filter out all paths that came across the specified node
 excludeNode :: [RoutePath] -> String -> [RoutePath]
 excludeNode paths v = filter (\(RoutePath path pcost) -> notElem v (tail path)) paths
+
+edges = [(RouteEdge "1" "2" 3), (RouteEdge "2" "3" 3)]
+paths = [(RoutePath ["2", "4", "5"] 4), (RoutePath ["3", "1", "4", "5"] 6)]
