@@ -5,6 +5,7 @@
 *\.hi
 *\.o
 *\.aux
+*\.out
 *\.log
 *\.gz
 
